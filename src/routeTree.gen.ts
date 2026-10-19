@@ -16,6 +16,7 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as DietaryRouteImport } from './routes/dietary'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
+import { Route as OrderRouteImport } from './routes/order'
 import { Route as TastingBoxesRouteImport } from './routes/tasting-boxes'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,11 @@ const HowItWorksRoute = HowItWorksRouteImport.update({
   path: '/how-it-works',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrderRoute = OrderRouteImport.update({
+  id: '/order',
+  path: '/order',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TastingBoxesRoute = TastingBoxesRouteImport.update({
   id: '/tasting-boxes',
   path: '/tasting-boxes',
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/dietary': typeof DietaryRoute
   '/faq': typeof FaqRoute
   '/how-it-works': typeof HowItWorksRoute
+  '/order': typeof OrderRoute
   '/tasting-boxes': typeof TastingBoxesRoute
 }
 export interface FileRoutesByTo {
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/dietary': typeof DietaryRoute
   '/faq': typeof FaqRoute
   '/how-it-works': typeof HowItWorksRoute
+  '/order': typeof OrderRoute
   '/tasting-boxes': typeof TastingBoxesRoute
 }
 export interface FileRoutesById {
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/dietary': typeof DietaryRoute
   '/faq': typeof FaqRoute
   '/how-it-works': typeof HowItWorksRoute
+  '/order': typeof OrderRoute
   '/tasting-boxes': typeof TastingBoxesRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/dietary'
     | '/faq'
     | '/how-it-works'
+    | '/order'
     | '/tasting-boxes'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/dietary'
     | '/faq'
     | '/how-it-works'
+    | '/order'
     | '/tasting-boxes'
   id:
     | '__root__'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/dietary'
     | '/faq'
     | '/how-it-works'
+    | '/order'
     | '/tasting-boxes'
   fileRoutesById: FileRoutesById
 }
@@ -131,6 +143,7 @@ export interface RootRouteChildren {
   DietaryRoute: typeof DietaryRoute
   FaqRoute: typeof FaqRoute
   HowItWorksRoute: typeof HowItWorksRoute
+  OrderRoute: typeof OrderRoute
   TastingBoxesRoute: typeof TastingBoxesRoute
 }
 
@@ -185,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HowItWorksRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/order': {
+      id: '/order'
+      path: '/order'
+      fullPath: '/order'
+      preLoaderRoute: typeof OrderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tasting-boxes': {
       id: '/tasting-boxes'
       path: '/tasting-boxes'
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   DietaryRoute: DietaryRoute,
   FaqRoute: FaqRoute,
   HowItWorksRoute: HowItWorksRoute,
+  OrderRoute: OrderRoute,
   TastingBoxesRoute: TastingBoxesRoute,
 }
 export const routeTree = rootRouteImport
