@@ -10,33 +10,141 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as CakesRouteImport } from './routes/cakes'
+import { Route as ContactRouteImport } from './routes/contact'
+import { Route as DietaryRouteImport } from './routes/dietary'
+import { Route as FaqRouteImport } from './routes/faq'
+import { Route as HowItWorksRouteImport } from './routes/how-it-works'
+import { Route as OrderRouteImport } from './routes/order'
+import { Route as TastingBoxesRouteImport } from './routes/tasting-boxes'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CakesRoute = CakesRouteImport.update({
+  id: '/cakes',
+  path: '/cakes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DietaryRoute = DietaryRouteImport.update({
+  id: '/dietary',
+  path: '/dietary',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HowItWorksRoute = HowItWorksRouteImport.update({
+  id: '/how-it-works',
+  path: '/how-it-works',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrderRoute = OrderRouteImport.update({
+  id: '/order',
+  path: '/order',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TastingBoxesRoute = TastingBoxesRouteImport.update({
+  id: '/tasting-boxes',
+  path: '/tasting-boxes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/cakes': typeof CakesRoute
+  '/contact': typeof ContactRoute
+  '/dietary': typeof DietaryRoute
+  '/faq': typeof FaqRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/order': typeof OrderRoute
+  '/tasting-boxes': typeof TastingBoxesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/cakes': typeof CakesRoute
+  '/contact': typeof ContactRoute
+  '/dietary': typeof DietaryRoute
+  '/faq': typeof FaqRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/order': typeof OrderRoute
+  '/tasting-boxes': typeof TastingBoxesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/cakes': typeof CakesRoute
+  '/contact': typeof ContactRoute
+  '/dietary': typeof DietaryRoute
+  '/faq': typeof FaqRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/order': typeof OrderRoute
+  '/tasting-boxes': typeof TastingBoxesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/cakes'
+    | '/contact'
+    | '/dietary'
+    | '/faq'
+    | '/how-it-works'
+    | '/order'
+    | '/tasting-boxes'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/about'
+    | '/cakes'
+    | '/contact'
+    | '/dietary'
+    | '/faq'
+    | '/how-it-works'
+    | '/order'
+    | '/tasting-boxes'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/cakes'
+    | '/contact'
+    | '/dietary'
+    | '/faq'
+    | '/how-it-works'
+    | '/order'
+    | '/tasting-boxes'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
+  CakesRoute: typeof CakesRoute
+  ContactRoute: typeof ContactRoute
+  DietaryRoute: typeof DietaryRoute
+  FaqRoute: typeof FaqRoute
+  HowItWorksRoute: typeof HowItWorksRoute
+  OrderRoute: typeof OrderRoute
+  TastingBoxesRoute: typeof TastingBoxesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +156,75 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cakes': {
+      id: '/cakes'
+      path: '/cakes'
+      fullPath: '/cakes'
+      preLoaderRoute: typeof CakesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dietary': {
+      id: '/dietary'
+      path: '/dietary'
+      fullPath: '/dietary'
+      preLoaderRoute: typeof DietaryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/how-it-works': {
+      id: '/how-it-works'
+      path: '/how-it-works'
+      fullPath: '/how-it-works'
+      preLoaderRoute: typeof HowItWorksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/order': {
+      id: '/order'
+      path: '/order'
+      fullPath: '/order'
+      preLoaderRoute: typeof OrderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tasting-boxes': {
+      id: '/tasting-boxes'
+      path: '/tasting-boxes'
+      fullPath: '/tasting-boxes'
+      preLoaderRoute: typeof TastingBoxesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
+  CakesRoute: CakesRoute,
+  ContactRoute: ContactRoute,
+  DietaryRoute: DietaryRoute,
+  FaqRoute: FaqRoute,
+  HowItWorksRoute: HowItWorksRoute,
+  OrderRoute: OrderRoute,
+  TastingBoxesRoute: TastingBoxesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
