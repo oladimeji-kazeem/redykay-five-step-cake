@@ -66,7 +66,7 @@ export function Footer() {
           <Link to="/order" className="opacity-80 hover:opacity-100">Order form</Link>
         </div>
       </div>
-      <p className="container-page pb-8 text-xs opacity-60">© {new Date().getFullYear()} RedyKay Cake Studio</p>
+      <p className="container-page pb-8 text-xs opacity-60">© {new Date().getFullYear()} Redycakes Cake Studio</p>
     </footer>
   );
 }

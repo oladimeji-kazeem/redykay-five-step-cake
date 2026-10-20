@@ -3,7 +3,7 @@ import { PageHero, seo } from "@/components/SiteLayout";
 import { images } from "@/lib/site";
 
 export const Route = createFileRoute("/tasting-boxes")({
-  head: () => seo("Wedding Tasting Boxes — RedyKay", "Try six of our signature flavours at home before choosing your wedding cake. A relaxed, low-pressure first step."),
+  head: () => seo("Wedding Tasting Boxes — Redycakes", "Try six of our signature flavours at home before choosing your wedding cake. A relaxed, low-pressure first step."),
   component: Tasting,
 });
 

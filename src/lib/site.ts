@@ -6,7 +6,7 @@ import buttercream from "@/assets/cake-buttercream.jpg";
 import tasting from "@/assets/tasting-box.jpg";
 
 export const CONTACT = {
-  email: "hello@redykay.co.uk",
+  email: "hello@redycakes.co.uk",
   whatsapp: "447000000000",
   serviceArea: "London & the Home Counties (collection or delivery within 30 miles)",
   replyPromise: "within 24 hours, Monday to Saturday",
