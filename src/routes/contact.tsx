@@ -24,7 +24,7 @@ function Contact() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const parsed = schema.safeParse(form);
-    if (!parsed.success) { setErr(parsed.error.issues[0].message); return; }
+    if (!parsed.success) { setErr(parsed.error.issues[0]?.message ?? "Please check the form."); return; }
     setErr(""); setStatus("sending");
     const { error } = await supabase.from("contact_messages").insert(parsed.data);
     setStatus(error ? "error" : "sent");
