@@ -4,7 +4,7 @@ import { CONTACT, gallery, images } from "@/lib/site";
 
 export const Route = createFileRoute("/")({
   head: () => seo(
-    "RedyKay — Bespoke Cakes, Ordered the Easy Way",
+    "Redycakes — Bespoke Cakes, Ordered the Easy Way",
     "Beautiful bespoke cakes with clear answers, honest timelines and flavours people rave about. Weddings, birthdays, corporate and dietary-friendly.",
   ),
   component: Home,

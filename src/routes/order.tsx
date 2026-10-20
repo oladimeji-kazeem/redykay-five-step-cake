@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/order")({
   validateSearch: (s: Record<string, unknown>): { occasion?: string } =>
     typeof s["occasion"] === "string" ? { occasion: s["occasion"] } : {},
-  head: () => seo("Start Your Order — RedyKay", "Tell us about your cake in a few simple steps. We reply within 24 hours, Monday to Saturday."),
+  head: () => seo("Start Your Order — Redycakes", "Tell us about your cake in a few simple steps. We reply within 24 hours, Monday to Saturday."),
   component: Order,
 });
 

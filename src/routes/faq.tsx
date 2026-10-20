@@ -3,7 +3,7 @@ import { CtaBand, PageHero, seo } from "@/components/SiteLayout";
 import { CONTACT } from "@/lib/site";
 
 export const Route = createFileRoute("/faq")({
-  head: () => seo("FAQ — RedyKay", "Lead times, deposits, changes, delivery and allergens — answered warmly and upfront."),
+  head: () => seo("FAQ — Redycakes", "Lead times, deposits, changes, delivery and allergens — answered warmly and upfront."),
   component: Faq,
 });
 

@@ -3,7 +3,7 @@ import { CtaBand, PageHero, seo } from "@/components/SiteLayout";
 import { CONTACT } from "@/lib/site";
 
 export const Route = createFileRoute("/how-it-works")({
-  head: () => seo("How Ordering Works — RedyKay", "Five clear steps from enquiry to delivery, with an honest promise on how quickly we reply."),
+  head: () => seo("How Ordering Works — Redycakes", "Five clear steps from enquiry to delivery, with an honest promise on how quickly we reply."),
   component: How,
 });
 

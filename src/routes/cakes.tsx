@@ -4,7 +4,7 @@ import { CtaBand, PageHero, seo } from "@/components/SiteLayout";
 import { gallery, type Occasion, type Style } from "@/lib/site";
 
 export const Route = createFileRoute("/cakes")({
-  head: () => seo("Cake Gallery — RedyKay", "Browse wedding, birthday, corporate and celebration cakes — each with the brief and how we solved it."),
+  head: () => seo("Cake Gallery — Redycakes", "Browse wedding, birthday, corporate and celebration cakes — each with the brief and how we solved it."),
   component: Cakes,
 });
 

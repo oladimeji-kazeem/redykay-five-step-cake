@@ -6,7 +6,7 @@ import { CONTACT } from "@/lib/site";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/contact")({
-  head: () => seo("Contact — RedyKay", "Message us, chat on WhatsApp or email. We reply within 24 hours, Monday to Saturday."),
+  head: () => seo("Contact — Redycakes", "Message us, chat on WhatsApp or email. We reply within 24 hours, Monday to Saturday."),
   component: Contact,
 });
 

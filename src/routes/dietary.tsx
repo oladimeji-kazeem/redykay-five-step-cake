@@ -3,7 +3,7 @@ import { CtaBand, PageHero, seo } from "@/components/SiteLayout";
 import { images } from "@/lib/site";
 
 export const Route = createFileRoute("/dietary")({
-  head: () => seo("Dietary-Friendly Cakes — RedyKay", "Vegan, gluten-free, dairy-free and egg-free bespoke cakes made with care — never an afterthought."),
+  head: () => seo("Dietary-Friendly Cakes — Redycakes", "Vegan, gluten-free, dairy-free and egg-free bespoke cakes made with care — never an afterthought."),
   component: Dietary,
 });
 

@@ -40,28 +40,28 @@
 
 :root {
   --radius: 1rem;
-  --background: oklch(0.975 0.012 75);
-  --foreground: oklch(0.27 0.035 40);
-  --card: oklch(0.99 0.008 75);
-  --card-foreground: oklch(0.27 0.035 40);
-  --popover: oklch(0.99 0.008 75);
-  --popover-foreground: oklch(0.27 0.035 40);
-  --primary: oklch(0.56 0.13 38);
-  --primary-foreground: oklch(0.98 0.01 75);
-  --secondary: oklch(0.93 0.03 60);
-  --secondary-foreground: oklch(0.32 0.05 40);
-  --muted: oklch(0.94 0.018 70);
-  --muted-foreground: oklch(0.5 0.03 45);
-  --accent: oklch(0.9 0.045 30);
-  --accent-foreground: oklch(0.32 0.06 35);
+  --background: oklch(0.975 0.008 300);
+  --foreground: oklch(0.3 0.05 300);
+  --card: oklch(0.99 0.005 300);
+  --card-foreground: oklch(0.3 0.05 300);
+  --popover: oklch(0.99 0.005 300);
+  --popover-foreground: oklch(0.3 0.05 300);
+  --primary: oklch(0.52 0.18 295);
+  --primary-foreground: oklch(0.98 0.01 300);
+  --secondary: oklch(0.94 0.025 300);
+  --secondary-foreground: oklch(0.35 0.06 300);
+  --muted: oklch(0.95 0.015 300);
+  --muted-foreground: oklch(0.5 0.04 300);
+  --accent: oklch(0.92 0.04 300);
+  --accent-foreground: oklch(0.35 0.08 300);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.88 0.025 65);
-  --input: oklch(0.86 0.025 65);
-  --ring: oklch(0.56 0.13 38);
-  --cocoa: oklch(0.28 0.04 40);
-  --cocoa-foreground: oklch(0.95 0.02 70);
-  --blush: oklch(0.88 0.06 25);
+  --border: oklch(0.89 0.02 300);
+  --input: oklch(0.87 0.02 300);
+  --ring: oklch(0.52 0.18 295);
+  --cocoa: oklch(0.3 0.08 300);
+  --cocoa-foreground: oklch(0.95 0.02 300);
+  --blush: oklch(0.88 0.07 320);
   --sage: oklch(0.75 0.05 140);
   --shadow-soft: 0 20px 50px -25px color-mix(in oklab, var(--cocoa) 40%, transparent);
 }
@@ -70,7 +70,13 @@
   * { border-color: var(--color-border); }
   html { scroll-behavior: smooth; }
   body {
-    background-color: var(--color-background);
+    background: linear-gradient(
+      160deg,
+      oklch(0.93 0.04 300) 0%,
+      oklch(0.985 0.006 300) 45%,
+      oklch(0.965 0.012 90) 100%
+    );
+    background-attachment: fixed;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
