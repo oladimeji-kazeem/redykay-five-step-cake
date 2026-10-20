@@ -17,8 +17,8 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
       <div className="container-page flex h-16 items-center justify-between gap-4">
-        <Link to="/" className="font-display text-2xl font-semibold tracking-tight">
-          Redy<span className="text-primary italic">cakes</span>
+        <Link to="/" className="flex items-center gap-2 font-display text-2xl font-semibold tracking-tight" aria-label="Redycakes Home">
+          <img src="/redycakes_logo.png" alt="Redycakes" className="h-8 sm:h-9 w-auto object-contain" />
         </Link>
         <nav className="hidden items-center gap-6 lg:flex">
           {nav.map((n) => (
@@ -52,7 +52,9 @@ export function Footer() {
     <footer className="mt-24 bg-cocoa text-cocoa-foreground">
       <div className="container-page grid gap-10 py-16 md:grid-cols-3">
         <div>
-          <p className="font-display text-3xl">Redy<span className="italic text-blush">cakes</span></p>
+          <Link to="/" className="inline-block" aria-label="Redycakes Home">
+            <img src="/redycakes_logo.png" alt="Redycakes" className="h-9 w-auto object-contain brightness-0 invert opacity-95" />
+          </Link>
           <p className="mt-3 max-w-xs text-sm opacity-80">Bespoke cakes, ordered the easy way. Clear answers, honest timelines, flavours people rave about.</p>
         </div>
         <div className="text-sm space-y-2 opacity-90">
@@ -93,7 +95,7 @@ export function CtaBand({ title = "Ready when you are.", text = `Tell us about y
   );
 }
 
-export function seo(title: string, description: string) {
+export function seo(title: string, description: string, image = "/redycakes_logo.png") {
   return {
     meta: [
       { title },
@@ -101,7 +103,9 @@ export function seo(title: string, description: string) {
       { property: "og:title", content: title },
       { property: "og:description", content: description },
       { property: "og:type", content: "website" },
+      { property: "og:image", content: image },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: image },
     ],
   };
 }

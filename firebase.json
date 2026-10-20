@@ -1,0 +1,34 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": [
+    {
+      "site": "redycakes",
+      "public": ".output/public",
+      "cleanUrls": true,
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    {
+      "site": "redycakes-studio",
+      "public": ".output/public",
+      "redirects": [
+        {
+          "source": "/**",
+          "destination": "https://redycakes.web.app/:splat",
+          "type": 301
+        }
+      ]
+    }
+  ]
+}

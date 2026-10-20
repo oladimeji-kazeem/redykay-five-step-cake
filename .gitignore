@@ -16,8 +16,9 @@ dist-ssr
 .nitro
 *.local
 
-# Wrangler / Cloudflare
+# Wrangler / Cloudflare / Firebase
 .wrangler/
+.firebase/
 .dev.vars
 
 # Editor directories and files

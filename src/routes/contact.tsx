@@ -3,7 +3,8 @@ import { useState } from "react";
 import { z } from "zod";
 import { PageHero, seo } from "@/components/SiteLayout";
 import { CONTACT } from "@/lib/site";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "@/integrations/firebase/client";
 
 export const Route = createFileRoute("/contact")({
   head: () => seo("Contact — Redycakes", "Message us, chat on WhatsApp or email. We reply within 24 hours, Monday to Saturday."),
@@ -26,8 +27,16 @@ function Contact() {
     const parsed = schema.safeParse(form);
     if (!parsed.success) { setErr(parsed.error.issues[0]?.message ?? "Please check the form."); return; }
     setErr(""); setStatus("sending");
-    const { error } = await supabase.from("contact_messages").insert(parsed.data);
-    setStatus(error ? "error" : "sent");
+    try {
+      await addDoc(collection(db, "contact_messages"), {
+        ...parsed.data,
+        createdAt: serverTimestamp(),
+      });
+      setStatus("sent");
+    } catch (error) {
+      console.error("Error saving contact message:", error);
+      setStatus("error");
+    }
   }
 
   return (

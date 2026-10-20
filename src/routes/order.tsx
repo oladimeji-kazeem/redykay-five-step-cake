@@ -3,7 +3,18 @@ import { useState } from "react";
 import { z } from "zod";
 import { seo } from "@/components/SiteLayout";
 import { CONTACT } from "@/lib/site";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/integrations/firebase/client";
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 export const Route = createFileRoute("/order")({
   validateSearch: (s: Record<string, unknown>): { occasion?: string } =>
@@ -55,23 +66,45 @@ function Order() {
     if (step < STEPS.length - 1) { setStep(step + 1); return; }
     setStatus("sending");
     try {
-      const paths: string[] = [];
+      const inspirationList: { name: string; url?: string; dataUrl?: string }[] = [];
       for (const f of files) {
-        const path = `${crypto.randomUUID()}-${f.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
-        const { error } = await supabase.storage.from("inspiration").upload(path, f);
-        if (error) throw error;
-        paths.push(path);
+        const cleanName = `${crypto.randomUUID()}-${f.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+        try {
+          const storageRef = ref(storage, `inspiration/${cleanName}`);
+          const uploadRes = await uploadBytes(storageRef, f);
+          const downloadUrl = await getDownloadURL(uploadRes.ref);
+          inspirationList.push({ name: f.name, url: downloadUrl });
+        } catch {
+          // If storage bucket is not provisioned or storage access fails, store base64 dataUrl (up to 500KB)
+          if (f.size <= 500 * 1024) {
+            const dataUrl = await fileToDataUrl(f);
+            inspirationList.push({ name: f.name, dataUrl });
+          } else {
+            inspirationList.push({ name: f.name });
+          }
+        }
       }
-      const { error } = await supabase.from("order_requests").insert({
-        name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim() || null,
-        occasion: d.occasion, event_date: d.event_date, guests: d.guests || null, budget: d.budget,
-        flavours: d.flavours, dietary: d.dietary, fulfilment: d.fulfilment, notes: d.notes.trim() || null,
-        inspiration_paths: paths,
+
+      await addDoc(collection(db, "order_requests"), {
+        name: d.name.trim(),
+        email: d.email.trim(),
+        phone: d.phone.trim() || null,
+        occasion: d.occasion,
+        event_date: d.event_date,
+        guests: d.guests || null,
+        budget: d.budget,
+        flavours: d.flavours,
+        dietary: d.dietary,
+        fulfilment: d.fulfilment,
+        notes: d.notes.trim() || null,
+        inspiration: inspirationList,
+        createdAt: serverTimestamp(),
       });
-      if (error) throw error;
       setStatus("done");
-    } catch {
-      setStatus("idle"); setErr("Something went wrong sending your request — please try again.");
+    } catch (error) {
+      console.error("Error submitting order request:", error);
+      setStatus("idle");
+      setErr("Something went wrong sending your request — please try again.");
     }
   }
 
