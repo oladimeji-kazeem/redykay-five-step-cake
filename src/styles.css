@@ -70,7 +70,13 @@
   * { border-color: var(--color-border); }
   html { scroll-behavior: smooth; }
   body {
-    background-color: var(--color-background);
+    background: linear-gradient(
+      160deg,
+      oklch(0.93 0.04 300) 0%,
+      oklch(0.985 0.006 300) 45%,
+      oklch(0.965 0.012 90) 100%
+    );
+    background-attachment: fixed;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
