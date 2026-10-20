@@ -18,7 +18,7 @@ export function Header() {
     <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
       <div className="container-page flex h-16 items-center justify-between gap-4">
         <Link to="/" className="font-display text-2xl font-semibold tracking-tight">
-          Redy<span className="text-primary italic">Kay</span>
+          Redy<span className="text-primary italic">cakes</span>
         </Link>
         <nav className="hidden items-center gap-6 lg:flex">
           {nav.map((n) => (
@@ -52,7 +52,7 @@ export function Footer() {
     <footer className="mt-24 bg-cocoa text-cocoa-foreground">
       <div className="container-page grid gap-10 py-16 md:grid-cols-3">
         <div>
-          <p className="font-display text-3xl">Redy<span className="italic text-blush">Kay</span></p>
+          <p className="font-display text-3xl">Redy<span className="italic text-blush">cakes</span></p>
           <p className="mt-3 max-w-xs text-sm opacity-80">Bespoke cakes, ordered the easy way. Clear answers, honest timelines, flavours people rave about.</p>
         </div>
         <div className="text-sm space-y-2 opacity-90">
