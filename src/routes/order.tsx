@@ -6,7 +6,8 @@ import { CONTACT } from "@/lib/site";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/order")({
-  validateSearch: (s: Record<string, unknown>) => ({ occasion: typeof s.occasion === "string" ? s.occasion : undefined }),
+  validateSearch: (s: Record<string, unknown>): { occasion?: string } =>
+    typeof s["occasion"] === "string" ? { occasion: s["occasion"] } : {},
   head: () => seo("Start Your Order — RedyKay", "Tell us about your cake in a few simple steps. We reply within 24 hours, Monday to Saturday."),
   component: Order,
 });
@@ -45,7 +46,7 @@ function Order() {
       if (new Date(d.event_date) < new Date(new Date().toDateString())) return "That date has already passed.";
       if (!d.budget) return "Please choose a budget range.";
     }
-    if (step === 4) { const r = contactSchema.safeParse(d); if (!r.success) return r.error.issues[0].message; }
+    if (step === 4) { const r = contactSchema.safeParse(d); if (!r.success) return r.error.issues[0]?.message ?? "Please check your details."; }
     return "";
   }
 
