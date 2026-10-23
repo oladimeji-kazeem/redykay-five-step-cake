@@ -1,20 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { z } from "zod";
 import { seo } from "@/components/SiteLayout";
-import { CONTACT } from "@/lib/site";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "@/integrations/firebase/client";
-
-async function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+import { useSiteContent } from "@/lib/siteContent";
+import { saveOrder } from "@/lib/databaseSchema";
+import { trackEvent } from "@/lib/analytics";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/order")({
   validateSearch: (s: Record<string, unknown>): { occasion?: string } =>
@@ -23,10 +14,7 @@ export const Route = createFileRoute("/order")({
   component: Order,
 });
 
-const OCCASIONS = ["Wedding", "Birthday", "Corporate", "Celebration", "Baby shower", "Tasting box"];
-const BUDGETS = ["Under £100", "£100–£200", "£200–£400", "£400–£700", "£700+", "Not sure yet"];
-const FLAVOURS = ["Vanilla bean", "Dark chocolate", "Lemon & elderflower", "Salted caramel", "Red velvet", "Pistachio & rose", "Raspberry", "Coconut & lime"];
-const DIETARY = ["Vegan", "Gluten-free", "Dairy-free", "Egg-free", "Nut-free"];
+const DEFAULT_BUDGETS = ["Under £100", "£100–£200", "£200–£400", "£400–£700", "£700+", "Not sure yet"];
 const STEPS = ["Occasion", "Date & budget", "Flavours", "Inspiration", "Your details"];
 
 const contactSchema = z.object({
@@ -36,10 +24,29 @@ const contactSchema = z.object({
 });
 
 function Order() {
+  const { content } = useSiteContent();
   const search = Route.useSearch();
   const [step, setStep] = useState(0);
+
+  const contact = content.contact;
+  const occasionsList = useMemo(() => {
+    const list = Array.from(new Set([
+      ...content.gallery.map((g) => g.occasion),
+      "Wedding", "Birthday", "Corporate", "Celebration", "Baby shower", "Tasting box"
+    ]));
+    return list;
+  }, [content.gallery]);
+
+  const flavoursList = content.dietary.flavours && content.dietary.flavours.length > 0
+    ? content.dietary.flavours
+    : ["Vanilla bean", "Dark chocolate", "Lemon & elderflower", "Salted caramel", "Red velvet", "Pistachio & rose"];
+
+  const dietaryList = content.dietary.categories && content.dietary.categories.length > 0
+    ? content.dietary.categories.map((c) => c.name)
+    : ["Vegan", "Gluten-free", "Dairy-free", "Egg-free", "Nut-free"];
+
   const [d, setD] = useState({
-    occasion: search.occasion && OCCASIONS.includes(search.occasion) ? search.occasion : "",
+    occasion: search.occasion && occasionsList.includes(search.occasion) ? search.occasion : (search.occasion || ""),
     event_date: "", guests: "", budget: "", flavours: [] as string[], dietary: [] as string[],
     fulfilment: "Collection", notes: "", name: "", email: "", phone: "",
   });
@@ -63,29 +70,25 @@ function Order() {
 
   async function next() {
     const e = validate(); setErr(e); if (e) return;
-    if (step < STEPS.length - 1) { setStep(step + 1); return; }
+    if (step < STEPS.length - 1) {
+      setStep(step + 1);
+      trackEvent("order_step_completed", { step: step + 1, occasion: d.occasion });
+      return;
+    }
     setStatus("sending");
     try {
-      const inspirationList: { name: string; url?: string; dataUrl?: string }[] = [];
+      const fileNames: string[] = [];
       for (const f of files) {
-        const cleanName = `${crypto.randomUUID()}-${f.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+        const cleanName = `${Date.now()}-${f.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
         try {
-          const storageRef = ref(storage, `inspiration/${cleanName}`);
-          const uploadRes = await uploadBytes(storageRef, f);
-          const downloadUrl = await getDownloadURL(uploadRes.ref);
-          inspirationList.push({ name: f.name, url: downloadUrl });
+          await supabase.storage.from("inspiration").upload(cleanName, f);
+          fileNames.push(cleanName);
         } catch {
-          // If storage bucket is not provisioned or storage access fails, store base64 dataUrl (up to 500KB)
-          if (f.size <= 500 * 1024) {
-            const dataUrl = await fileToDataUrl(f);
-            inspirationList.push({ name: f.name, dataUrl });
-          } else {
-            inspirationList.push({ name: f.name });
-          }
+          fileNames.push(f.name);
         }
       }
 
-      await addDoc(collection(db, "order_requests"), {
+      await saveOrder({
         name: d.name.trim(),
         email: d.email.trim(),
         phone: d.phone.trim() || null,
@@ -97,9 +100,15 @@ function Order() {
         dietary: d.dietary,
         fulfilment: d.fulfilment,
         notes: d.notes.trim() || null,
-        inspiration: inspirationList,
-        createdAt: serverTimestamp(),
+        inspiration_paths: fileNames,
       });
+
+      trackEvent("order_submitted", {
+        occasion: d.occasion,
+        budget: d.budget,
+        guests: d.guests,
+      });
+
       setStatus("done");
     } catch (error) {
       console.error("Error submitting order request:", error);
@@ -113,7 +122,7 @@ function Order() {
       <section className="container-page max-w-2xl py-24 text-center">
         <p className="eyebrow">Request received</p>
         <h1 className="mt-4 text-5xl">Thank you, {d.name.split(" ")[0]}!</h1>
-        <p className="mt-6 text-lg text-muted-foreground">Your cake request is with us. Expect a personal reply with your quote {CONTACT.replyPromise}, sent to <strong className="text-foreground">{d.email}</strong>.</p>
+        <p className="mt-6 text-lg text-muted-foreground">Your cake request is with us. Expect a personal reply with your quote {contact.replyPromise}, sent to <strong className="text-foreground">{d.email}</strong>.</p>
       </section>
     );
   }
@@ -122,21 +131,21 @@ function Order() {
     <section className="container-page max-w-3xl py-16">
       <p className="eyebrow">Start your order</p>
       <h1 className="mt-3 text-4xl md:text-5xl">Tell us about your cake.</h1>
-      <p className="mt-3 text-muted-foreground">About five minutes. We reply {CONTACT.replyPromise}.</p>
+      <p className="mt-3 text-muted-foreground">About five minutes. We reply {contact.replyPromise}.</p>
 
       <div className="mt-10">
-        <div className="flex justify-between text-xs text-muted-foreground">
-          {STEPS.map((s, i) => <span key={s} className={i <= step ? "font-semibold text-foreground" : ""}>{s}</span>)}
+        <div className="flex justify-between text-xs text-muted-foreground font-medium">
+          {STEPS.map((s, i) => <span key={s} className={i <= step ? "font-semibold text-primary" : ""}>{s}</span>)}
         </div>
-        <div className="mt-2 h-2 rounded-full bg-muted">
-          <div className="h-2 rounded-full bg-primary transition-all" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+        <div className="mt-2.5 h-2.5 rounded-full bg-muted/80 overflow-hidden">
+          <div className="h-full rounded-full bg-gradient-to-r from-primary to-[#8B5CF6] transition-all duration-300 shadow-sm" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
         </div>
       </div>
 
-      <div className="mt-10 rounded-3xl border bg-card p-6 md:p-10">
+      <div className="mt-10 rounded-3xl border border-border/80 bg-card p-6 md:p-10 shadow-soft">
         {step === 0 && (
           <Group label="What's the occasion?">
-            <div className="flex flex-wrap gap-2">{OCCASIONS.map((o) => <button key={o} type="button" className="chip" data-active={d.occasion === o} onClick={() => setD({ ...d, occasion: o })}>{o}</button>)}</div>
+            <div className="flex flex-wrap gap-2">{occasionsList.map((o) => <button key={o} type="button" className="chip" data-active={d.occasion === o} onClick={() => setD({ ...d, occasion: o })}>{o}</button>)}</div>
           </Group>
         )}
         {step === 1 && (
@@ -144,17 +153,17 @@ function Order() {
             <Group label="Event date"><input type="date" className="field" value={d.event_date} onChange={(e) => setD({ ...d, event_date: e.target.value })} /></Group>
             <Group label="Roughly how many guests? (optional)"><input className="field" maxLength={30} value={d.guests} onChange={(e) => setD({ ...d, guests: e.target.value })} placeholder="e.g. 40" /></Group>
             <Group label="Budget">
-              <div className="flex flex-wrap gap-2">{BUDGETS.map((b) => <button key={b} type="button" className="chip" data-active={d.budget === b} onClick={() => setD({ ...d, budget: b })}>{b}</button>)}</div>
+              <div className="flex flex-wrap gap-2">{DEFAULT_BUDGETS.map((b) => <button key={b} type="button" className="chip" data-active={d.budget === b} onClick={() => setD({ ...d, budget: b })}>{b}</button>)}</div>
             </Group>
           </div>
         )}
         {step === 2 && (
           <div className="space-y-6">
             <Group label="Flavours you love (pick any)">
-              <div className="flex flex-wrap gap-2">{FLAVOURS.map((f) => <button key={f} type="button" className="chip" data-active={d.flavours.includes(f)} onClick={() => toggle("flavours", f)}>{f}</button>)}</div>
+              <div className="flex flex-wrap gap-2">{flavoursList.map((f) => <button key={f} type="button" className="chip" data-active={d.flavours.includes(f)} onClick={() => toggle("flavours", f)}>{f}</button>)}</div>
             </Group>
             <Group label="Dietary needs">
-              <div className="flex flex-wrap gap-2">{DIETARY.map((f) => <button key={f} type="button" className="chip" data-active={d.dietary.includes(f)} onClick={() => toggle("dietary", f)}>{f}</button>)}</div>
+              <div className="flex flex-wrap gap-2">{dietaryList.map((f) => <button key={f} type="button" className="chip" data-active={d.dietary.includes(f)} onClick={() => toggle("dietary", f)}>{f}</button>)}</div>
             </Group>
           </div>
         )}

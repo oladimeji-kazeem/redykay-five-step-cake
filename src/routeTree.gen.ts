@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as CakesRouteImport } from './routes/cakes'
+import { Route as CmsRouteImport } from './routes/cms'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as DietaryRouteImport } from './routes/dietary'
 import { Route as FaqRouteImport } from './routes/faq'
@@ -32,6 +33,11 @@ const AboutRoute = AboutRouteImport.update({
 const CakesRoute = CakesRouteImport.update({
   id: '/cakes',
   path: '/cakes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CmsRoute = CmsRouteImport.update({
+  id: '/cms',
+  path: '/cms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactRoute = ContactRouteImport.update({
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/cakes': typeof CakesRoute
+  '/cms': typeof CmsRoute
   '/contact': typeof ContactRoute
   '/dietary': typeof DietaryRoute
   '/faq': typeof FaqRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/cakes': typeof CakesRoute
+  '/cms': typeof CmsRoute
   '/contact': typeof ContactRoute
   '/dietary': typeof DietaryRoute
   '/faq': typeof FaqRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/cakes': typeof CakesRoute
+  '/cms': typeof CmsRoute
   '/contact': typeof ContactRoute
   '/dietary': typeof DietaryRoute
   '/faq': typeof FaqRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/cakes'
+    | '/cms'
     | '/contact'
     | '/dietary'
     | '/faq'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/cakes'
+    | '/cms'
     | '/contact'
     | '/dietary'
     | '/faq'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/cakes'
+    | '/cms'
     | '/contact'
     | '/dietary'
     | '/faq'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   CakesRoute: typeof CakesRoute
+  CmsRoute: typeof CmsRoute
   ContactRoute: typeof ContactRoute
   DietaryRoute: typeof DietaryRoute
   FaqRoute: typeof FaqRoute
@@ -168,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: '/cakes'
       fullPath: '/cakes'
       preLoaderRoute: typeof CakesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cms': {
+      id: '/cms'
+      path: '/cms'
+      fullPath: '/cms'
+      preLoaderRoute: typeof CmsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -219,6 +239,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   CakesRoute: CakesRoute,
+  CmsRoute: CmsRoute,
   ContactRoute: ContactRoute,
   DietaryRoute: DietaryRoute,
   FaqRoute: FaqRoute,

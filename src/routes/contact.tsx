@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { PageHero, seo } from "@/components/SiteLayout";
-import { CONTACT } from "@/lib/site";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/integrations/firebase/client";
+import { useSiteContent } from "@/lib/siteContent";
+import { saveContactMessage } from "@/lib/databaseSchema";
+import { trackEvent } from "@/lib/analytics";
 
 export const Route = createFileRoute("/contact")({
   head: () => seo("Contact — Redycakes", "Message us, chat on WhatsApp or email. We reply within 24 hours, Monday to Saturday."),
@@ -18,6 +18,8 @@ const schema = z.object({
 });
 
 function Contact() {
+  const { content } = useSiteContent();
+  const contact = content.contact;
   const [form, setForm] = useState({ name: "", email: "", message: "" });
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [err, setErr] = useState("");
@@ -28,10 +30,12 @@ function Contact() {
     if (!parsed.success) { setErr(parsed.error.issues[0]?.message ?? "Please check the form."); return; }
     setErr(""); setStatus("sending");
     try {
-      await addDoc(collection(db, "contact_messages"), {
-        ...parsed.data,
-        createdAt: serverTimestamp(),
+      await saveContactMessage({
+        name: parsed.data.name,
+        email: parsed.data.email,
+        message: parsed.data.message,
       });
+      trackEvent("contact_submitted", { email: parsed.data.email });
       setStatus("sent");
     } catch (error) {
       console.error("Error saving contact message:", error);
@@ -41,12 +45,12 @@ function Contact() {
 
   return (
     <>
-      <PageHero eyebrow="Contact" title="Say hello." intro={`We reply ${CONTACT.replyPromise}.`} />
+      <PageHero eyebrow="Contact" title="Say hello." intro={`We reply ${contact.replyPromise}.`} />
       <section className="container-page grid gap-12 md:grid-cols-[1.3fr_1fr]">
         {status === "sent" ? (
-          <div className="rounded-3xl bg-secondary p-10">
-            <h2 className="text-3xl">Thank you — message received.</h2>
-            <p className="mt-3 text-muted-foreground">We'll reply {CONTACT.replyPromise}.</p>
+          <div className="rounded-3xl border border-primary/20 bg-gradient-to-br from-secondary/80 to-accent/40 p-10 shadow-soft">
+            <h2 className="text-3xl font-semibold">Thank you — message received.</h2>
+            <p className="mt-3 text-muted-foreground">We'll reply {contact.replyPromise}.</p>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
@@ -59,9 +63,9 @@ function Contact() {
           </form>
         )}
         <aside className="space-y-6">
-          <a href={`https://wa.me/${CONTACT.whatsapp}`} target="_blank" rel="noreferrer" className="btn btn-primary w-full">Quick chat on WhatsApp</a>
-          <div><p className="eyebrow">Email</p><a href={`mailto:${CONTACT.email}`} className="mt-1 block text-lg">{CONTACT.email}</a></div>
-          <div><p className="eyebrow">Service area</p><p className="mt-1 text-lg">{CONTACT.serviceArea}</p></div>
+          <a href={`https://wa.me/${contact.whatsapp}`} target="_blank" rel="noreferrer" className="btn btn-primary w-full">Quick chat on WhatsApp</a>
+          <div><p className="eyebrow">Email</p><a href={`mailto:${contact.email}`} className="mt-1 block text-lg font-medium hover:text-primary transition-colors">{contact.email}</a></div>
+          <div><p className="eyebrow">Service area</p><p className="mt-1 text-lg font-medium">{contact.serviceArea}</p></div>
         </aside>
       </section>
     </>
