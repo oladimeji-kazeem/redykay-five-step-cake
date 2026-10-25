@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "postbuild": "node -e \"import('node:fs').then(fs => { if (fs.existsSync('public/.htaccess')) fs.copyFileSync('public/.htaccess', '.output/public/.htaccess'); })\"",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "build:hostinger": "npm run build && node scripts/package-hostinger.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
