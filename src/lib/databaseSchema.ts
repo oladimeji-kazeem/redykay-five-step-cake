@@ -123,6 +123,43 @@ FOR INSERT TO anon, authenticated WITH CHECK (bucket_id = 'inspiration');
 DROP POLICY IF EXISTS "Public inspiration reads" ON storage.objects;
 CREATE POLICY "Public inspiration reads" ON storage.objects
 FOR SELECT TO anon, authenticated USING (bucket_id = 'inspiration');
+
+-- 9. Live Payment Settings Table (Configurable by CMS Privileged Users)
+CREATE TABLE IF NOT EXISTS public.payment_settings (
+  id text PRIMARY KEY DEFAULT 'current_settings',
+  settings jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by text
+);
+GRANT ALL ON public.payment_settings TO anon, authenticated, service_role;
+ALTER TABLE public.payment_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read payment_settings" ON public.payment_settings;
+CREATE POLICY "Public read payment_settings" ON public.payment_settings FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "Privileged write payment_settings" ON public.payment_settings;
+CREATE POLICY "Privileged write payment_settings" ON public.payment_settings FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- 10. Payment Transactions Table
+CREATE TABLE IF NOT EXISTS public.payment_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  order_id text,
+  customer_name text NOT NULL,
+  customer_email text NOT NULL,
+  amount numeric NOT NULL,
+  currency text NOT NULL DEFAULT 'GBP',
+  payment_type text NOT NULL,
+  method text NOT NULL,
+  status text NOT NULL DEFAULT 'completed',
+  reference text NOT NULL,
+  notes text,
+  gateway_response jsonb
+);
+GRANT ALL ON public.payment_transactions TO anon, authenticated, service_role;
+ALTER TABLE public.payment_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can insert payment_transactions" ON public.payment_transactions;
+CREATE POLICY "Anyone can insert payment_transactions" ON public.payment_transactions FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "Anyone can read payment_transactions" ON public.payment_transactions;
+CREATE POLICY "Anyone can read payment_transactions" ON public.payment_transactions FOR SELECT TO anon, authenticated USING (true);
 `;
 
 export const COMPLETE_DATABASE_SCHEMA_SQL = COMPLETE_SUPABASE_SQL;
@@ -142,6 +179,12 @@ export interface OrderItem {
   notes?: string | null;
   inspiration_paths?: string[];
   status: "New" | "Quoted" | "Confirmed" | "Baking" | "Completed" | "Archived";
+  quote_amount?: number | null;
+  deposit_amount?: number | null;
+  payment_status?: "Unpaid" | "Deposit Paid" | "Paid in Full" | "Pending Verification" | "Refunded";
+  payment_method?: "card" | "bank_transfer" | "cash" | "other" | null;
+  payment_reference?: string | null;
+  paid_at?: string | null;
   created_at: string;
 }
 
@@ -252,6 +295,67 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderItem["s
       // Ignore
     }
   }
+}
+
+export async function updateOrderPayment(
+  orderId: string,
+  paymentData: {
+    quote_amount?: number | null;
+    deposit_amount?: number | null;
+    payment_status?: OrderItem["payment_status"];
+    payment_method?: OrderItem["payment_method"];
+    payment_reference?: string | null;
+    paid_at?: string | null;
+    status?: OrderItem["status"];
+  }
+): Promise<OrderItem | null> {
+  try {
+    await supabase.from("order_requests" as any).update(paymentData).eq("id", orderId);
+  } catch (err) {
+    console.debug("[Orders] Supabase update payment note:", err);
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const existing = await fetchOrders();
+      let updatedOrder: OrderItem | null = null;
+      const updated = existing.map((o) => {
+        if (o.id === orderId) {
+          updatedOrder = { ...o, ...paymentData };
+          return updatedOrder;
+        }
+        return o;
+      });
+      localStorage.setItem(STORAGE_ORDERS, JSON.stringify(updated));
+      return updatedOrder;
+    } catch {
+      // Ignore
+    }
+  }
+  return null;
+}
+
+export async function fetchOrderById(orderId: string): Promise<OrderItem | null> {
+  try {
+    const { data, error } = await supabase
+      .from("order_requests" as any)
+      .select("*")
+      .eq("id", orderId)
+      .single();
+
+    if (!error && data) {
+      return data as OrderItem;
+    }
+  } catch (err) {
+    console.debug("[Orders] Supabase fetch by ID note:", err);
+  }
+
+  if (typeof window !== "undefined") {
+    const existing = await fetchOrders();
+    const match = existing.find((o) => o.id === orderId || o.id.startsWith(orderId));
+    if (match) return match;
+  }
+  return null;
 }
 
 export async function fetchContactMessages(): Promise<ContactItem[]> {

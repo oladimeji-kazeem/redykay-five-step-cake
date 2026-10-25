@@ -28,6 +28,16 @@ import {
   Tablet,
   TrendingUp,
   Sparkles,
+  CreditCard,
+  Building2,
+  Lock,
+  ShieldCheck,
+  ShieldAlert,
+  KeyRound,
+  DollarSign,
+  Wallet,
+  EyeOff,
+  CheckCircle2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -65,17 +75,29 @@ import {
   fetchContactMessages,
   updateOrderStatus,
   updateMessageStatus,
+  updateOrderPayment,
   COMPLETE_DATABASE_SCHEMA_SQL,
   type OrderRequest,
   type ContactMessage,
 } from "@/lib/databaseSchema";
+import {
+  usePaymentSettings,
+  formatMoney,
+  fetchPaymentTransactions,
+  DEFAULT_PAYMENT_SETTINGS,
+  type PaymentSettings,
+  type PaymentTransaction,
+  type PaymentProvider,
+  type PaymentEnvironment,
+  type PaymentCurrency,
+} from "@/lib/paymentSettings";
 
 export const Route = createFileRoute("/cms")({
   head: () => seo("CMS Admin Studio — Redycakes", "Manage site content, orders, inquiries, web analytics and team access."),
   component: CmsPage,
 });
 
-type TabType = "overview" | "analytics" | "content" | "orders" | "messages" | "users" | "database";
+type TabType = "overview" | "analytics" | "content" | "orders" | "messages" | "users" | "payments" | "database";
 type ContentSection = "hero" | "cakes" | "trust" | "dietary" | "tasting" | "howItWorks" | "faq" | "about" | "contact";
 
 function CmsPage() {
@@ -147,6 +169,24 @@ function CmsPage() {
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // Payment settings state & draft
+  const {
+    settings: paymentSettings,
+    updateSettings: updatePaymentSettings,
+    resetSettings: resetPaymentSettings,
+  } = usePaymentSettings();
+  const [draftPaymentSettings, setDraftPaymentSettings] = useState<PaymentSettings>(paymentSettings);
+  const [hasUnsavedPaymentChanges, setHasUnsavedPaymentChanges] = useState(false);
+  const [paymentSection, setPaymentSection] = useState<"gateway" | "bank" | "rules" | "history">("gateway");
+  const [showSecretKey, setShowSecretKey] = useState(false);
+  const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
+  const [showTestCheckoutModal, setShowTestCheckoutModal] = useState(false);
+
+  // Sync draft when payment settings load from server
+  useEffect(() => {
+    setDraftPaymentSettings(paymentSettings);
+  }, [paymentSettings]);
+
   // Load analytics & data
   useEffect(() => {
     if (!currentUser) return;
@@ -154,6 +194,7 @@ function CmsPage() {
     getAnalyticsData(analyticsDays).then(setAnalytics).catch(console.error);
     fetchOrders().then(setOrders).catch(console.error);
     fetchContactMessages().then(setMessages).catch(console.error);
+    fetchPaymentTransactions().then(setPaymentTransactions).catch(console.error);
   }, [currentUser, analyticsDays]);
 
   // Refresh helper
@@ -161,6 +202,44 @@ function CmsPage() {
     getAnalyticsData(analyticsDays).then(setAnalytics);
     fetchOrders().then(setOrders);
     fetchContactMessages().then(setMessages);
+    fetchPaymentTransactions().then(setPaymentTransactions);
+  };
+
+  // Payment draft updater
+  const updatePaymentDraft = (updater: (prev: PaymentSettings) => PaymentSettings) => {
+    setDraftPaymentSettings((prev) => {
+      const next = updater(prev);
+      setHasUnsavedPaymentChanges(true);
+      return next;
+    });
+  };
+
+  const handleSavePaymentSettings = async () => {
+    if (!canManageUsers && !isSuperAdmin) {
+      toast.error("Privilege restriction: Only Superadmins and Admins can configure payment keys and bank details.");
+      return;
+    }
+    const ok = await updatePaymentSettings(draftPaymentSettings, currentUser?.email);
+    if (ok) {
+      setHasUnsavedPaymentChanges(false);
+      toast.success("Live payment configuration saved successfully!", {
+        description: `Active Gateway: ${draftPaymentSettings.onlinePayments.provider.toUpperCase()} (${draftPaymentSettings.onlinePayments.environment.toUpperCase()} mode)`,
+      });
+    } else {
+      toast.error("Failed to save payment settings. Please try again.");
+    }
+  };
+
+  const handleResetPaymentSettings = async () => {
+    if (!canManageUsers && !isSuperAdmin) {
+      toast.error("Privilege restriction: Only Superadmins and Admins can reset payment settings.");
+      return;
+    }
+    if (!confirm("Are you sure you want to reset payment configuration to standard defaults?")) return;
+    await resetPaymentSettings(currentUser?.email);
+    setDraftPaymentSettings(DEFAULT_PAYMENT_SETTINGS);
+    setHasUnsavedPaymentChanges(false);
+    toast.info("Payment settings restored to defaults.");
   };
 
   // Handle draft field changes
@@ -498,6 +577,32 @@ function CmsPage() {
             </button>
 
             <button
+              onClick={() => setActiveTab("payments")}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "payments"
+                  ? "bg-primary text-primary-foreground shadow-soft"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <CreditCard className="h-4 w-4" />
+                <span>Live Payments</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {hasUnsavedPaymentChanges && (
+                  <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" title="Unsaved payment changes" />
+                )}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
+                  draftPaymentSettings.onlinePayments.environment === "live"
+                    ? "bg-emerald-500/20 text-emerald-600"
+                    : "bg-amber-500/20 text-amber-600"
+                }`}>
+                  {draftPaymentSettings.onlinePayments.environment}
+                </span>
+              </div>
+            </button>
+
+            <button
               onClick={() => setActiveTab("database")}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === "database"
@@ -523,6 +628,16 @@ function CmsPage() {
             >
               <Save className="h-3.5 w-3.5" />
               Save Site Changes
+            </button>
+          )}
+
+          {hasUnsavedPaymentChanges && (
+            <button
+              onClick={handleSavePaymentSettings}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground py-2 text-xs font-semibold shadow hover:opacity-90 transition"
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save Payment Settings
             </button>
           )}
 
@@ -674,6 +789,17 @@ function CmsPage() {
                       <p className="text-xs text-muted-foreground">Invite team members & assign roles</p>
                     </div>
                     <Users className="h-4 w-4 text-primary" />
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab("payments")}
+                    className="w-full text-left p-3 rounded-xl border border-border/60 hover:border-primary/50 hover:bg-primary/5 transition flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">Live Payment & Bank Details</p>
+                      <p className="text-xs text-muted-foreground">Configure Stripe, Paystack & Faster Payments</p>
+                    </div>
+                    <CreditCard className="h-4 w-4 text-primary" />
                   </button>
 
                   <button
@@ -1722,7 +1848,8 @@ function CmsPage() {
                       <th className="p-3.5 font-semibold">Customer</th>
                       <th className="p-3.5 font-semibold">Cake & Guests</th>
                       <th className="p-3.5 font-semibold">Event Date</th>
-                      <th className="p-3.5 font-semibold">Budget</th>
+                      <th className="p-3.5 font-semibold">Budget / Quote</th>
+                      <th className="p-3.5 font-semibold">Payment</th>
                       <th className="p-3.5 font-semibold">Status</th>
                       <th className="p-3.5 font-semibold text-right">Actions</th>
                     </tr>
@@ -1746,8 +1873,28 @@ function CmsPage() {
                         <td className="p-3.5 whitespace-nowrap font-medium text-foreground">
                           {o.event_date || (o as any).date || "Not set"}
                         </td>
-                        <td className="p-3.5 font-semibold text-primary">
-                          {o.budget || "Custom"}
+                        <td className="p-3.5">
+                          <p className="font-semibold text-foreground">{o.budget || "Custom"}</p>
+                          {o.quote_amount && (
+                            <p className="text-[11px] font-bold text-primary">
+                              Quote: {formatMoney(o.quote_amount, draftPaymentSettings.currency)}
+                            </p>
+                          )}
+                        </td>
+                        <td className="p-3.5 whitespace-nowrap">
+                          <span
+                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                              o.payment_status === "Paid in Full"
+                                ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                                : o.payment_status === "Deposit Paid"
+                                ? "bg-blue-500/20 text-blue-700 dark:text-blue-300"
+                                : o.payment_status === "Pending Verification"
+                                ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {o.payment_status || "Unpaid"}
+                          </span>
                         </td>
                         <td className="p-3.5">
                           <select
@@ -1775,7 +1922,7 @@ function CmsPage() {
                             onClick={() => setSelectedOrder(o)}
                             className="p-1.5 rounded-lg border border-border/80 hover:bg-accent text-foreground transition text-xs font-medium"
                           >
-                            View Details
+                            View & Price
                           </button>
                         </td>
                       </tr>
@@ -2009,6 +2156,1005 @@ function CmsPage() {
           </div>
         )}
 
+        {/* LIVE PAYMENTS TAB */}
+        {activeTab === "payments" && (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            {/* Header & Main Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold">Live Payments & Banking</h1>
+                  <span
+                    className={`text-xs uppercase font-extrabold px-2.5 py-0.5 rounded-full ${
+                      draftPaymentSettings.onlinePayments.environment === "live"
+                        ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                        : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                    }`}
+                  >
+                    {draftPaymentSettings.onlinePayments.environment} mode
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Manage live checkout gateways, public API keys, UK Faster Payments accounts, and customer deposit policies.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTestCheckoutModal(true)}
+                  className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-accent text-foreground transition flex items-center gap-1.5"
+                >
+                  <Eye className="h-3.5 w-3.5 text-primary" />
+                  <span>Preview Checkout</span>
+                </button>
+
+                <a
+                  href="/pay"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-accent text-foreground transition flex items-center gap-1.5"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Open /pay</span>
+                </a>
+
+                {canManageUsers || isSuperAdmin ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleResetPaymentSettings}
+                      className="rounded-xl border border-destructive/20 text-destructive hover:bg-destructive/10 px-3 py-1.5 text-xs font-semibold transition"
+                    >
+                      Reset Defaults
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSavePaymentSettings}
+                      disabled={!hasUnsavedPaymentChanges}
+                      className="btn btn-primary !py-1.5 !px-4 text-xs font-bold flex items-center gap-1.5 shadow-soft disabled:opacity-50"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      <span>Save Changes</span>
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Privilege Gate Alert if Non-Privileged */}
+            {(!canManageUsers && !isSuperAdmin) && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
+                <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                <div>
+                  <p className="font-bold text-sm">Privileged Access Required for Changes</p>
+                  <p className="mt-0.5">
+                    You are logged in with an Editor/Viewer role. Viewing and configuring live payment keys, secret tokens, and official studio bank accounts is restricted to Administrators and Superadmins.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Top Status Summary KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">Active Gateway</span>
+                  <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                    <CreditCard className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <span className="text-2xl font-bold capitalize">
+                    {draftPaymentSettings.onlinePayments.enabled
+                      ? draftPaymentSettings.onlinePayments.provider
+                      : "Disabled"}
+                  </span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ({draftPaymentSettings.onlinePayments.environment})
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Instant card processing</p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">UK Bank Transfer</span>
+                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+                    <Building2 className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <span className="text-2xl font-bold">
+                    {draftPaymentSettings.bankTransfer.enabled ? "Active" : "Disabled"}
+                  </span>
+                  <span className="text-xs text-muted-foreground ml-2">Faster Payments</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Sort: {draftPaymentSettings.bankTransfer.sortCode}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">Deposit Policy</span>
+                  <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600">
+                    <DollarSign className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <span className="text-2xl font-bold">
+                    {draftPaymentSettings.depositRules.depositPercentage}%
+                  </span>
+                  <span className="text-xs text-muted-foreground ml-2">to secure date</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Tasting Box: {formatMoney(draftPaymentSettings.depositRules.tastingBoxPrice, draftPaymentSettings.currency)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">Logged Transactions</span>
+                  <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600">
+                    <Wallet className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <span className="text-2xl font-bold">{paymentTransactions.length}</span>
+                  <span className="text-xs text-muted-foreground ml-2">payments</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Processed transactions</p>
+              </div>
+            </div>
+
+            {/* Sub-tabs Navigation */}
+            <div className="flex rounded-2xl bg-secondary/50 p-1 border border-border/70 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setPaymentSection("gateway")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                  paymentSection === "gateway"
+                    ? "bg-card text-foreground shadow-soft border border-border/80"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <CreditCard className="h-3.5 w-3.5 text-primary" />
+                <span>Online Card Gateway</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentSection("bank")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                  paymentSection === "bank"
+                    ? "bg-card text-foreground shadow-soft border border-border/80"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Building2 className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Bank Transfer (Faster Payments)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentSection("rules")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                  paymentSection === "rules"
+                    ? "bg-card text-foreground shadow-soft border border-border/80"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-purple-600" />
+                <span>Deposit Rules & Policies</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentSection("history")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                  paymentSection === "history"
+                    ? "bg-card text-foreground shadow-soft border border-border/80"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Wallet className="h-3.5 w-3.5 text-blue-600" />
+                <span>Transactions Log ({paymentTransactions.length})</span>
+              </button>
+            </div>
+
+            {/* SECTION 1: ONLINE CARD GATEWAY */}
+            {paymentSection === "gateway" && (
+              <div className="rounded-3xl border border-border/80 bg-card p-6 shadow-soft space-y-6 animate-in fade-in duration-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/80">
+                  <div>
+                    <h2 className="text-base font-semibold">Online Card Checkout Configuration</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Enable customers to pay cake deposits or tasting boxes online instantly with Visa, Mastercard, AMEX, Apple Pay and Google Pay.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-semibold text-muted-foreground">Gateway Active:</label>
+                    <button
+                      type="button"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      onClick={() =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          onlinePayments: {
+                            ...prev.onlinePayments,
+                            enabled: !prev.onlinePayments.enabled,
+                          },
+                        }))
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        draftPaymentSettings.onlinePayments.enabled ? "bg-emerald-600" : "bg-muted"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          draftPaymentSettings.onlinePayments.enabled ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Provider Selector */}
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Payment Provider / Gateway
+                    </label>
+                    <select
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.onlinePayments.provider}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          onlinePayments: {
+                            ...prev.onlinePayments,
+                            provider: e.target.value as PaymentProvider,
+                          },
+                        }))
+                      }
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:border-primary outline-none"
+                    >
+                      <option value="stripe">Stripe (Global Cards, Apple Pay, Google Pay)</option>
+                      <option value="paystack">Paystack (Cards, Bank Transfer, USSD)</option>
+                      <option value="custom_link">Custom Hosted Checkout (Stripe Payment Link / Page)</option>
+                    </select>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Recommended: Stripe for UK and international cake orders.
+                    </p>
+                  </div>
+
+                  {/* Environment Selector */}
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Gateway Environment
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        onClick={() =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            onlinePayments: {
+                              ...prev.onlinePayments,
+                              environment: "live",
+                            },
+                          }))
+                        }
+                        className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          draftPaymentSettings.onlinePayments.environment === "live"
+                            ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            : "border-border hover:bg-accent text-muted-foreground"
+                        }`}
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        <span>Live Mode (Real Cards)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        onClick={() =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            onlinePayments: {
+                              ...prev.onlinePayments,
+                              environment: "test",
+                            },
+                          }))
+                        }
+                        className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          draftPaymentSettings.onlinePayments.environment === "test"
+                            ? "border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                            : "border-border hover:bg-accent text-muted-foreground"
+                        }`}
+                      >
+                        <KeyRound className="h-3.5 w-3.5" />
+                        <span>Test / Sandbox Mode</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* API Key Fields based on provider */}
+                {draftPaymentSettings.onlinePayments.provider === "stripe" && (
+                  <div className="space-y-4 pt-2 border-t border-border/80">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-muted-foreground">
+                          Stripe Publishable API Key *
+                        </label>
+                        <span className="text-[11px] font-mono text-muted-foreground">
+                          Must begin with <code className="text-primary font-bold">pk_live_</code> or <code className="text-amber-600 font-bold">pk_test_</code>
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        value={draftPaymentSettings.onlinePayments.stripePublicKey}
+                        onChange={(e) =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            onlinePayments: {
+                              ...prev.onlinePayments,
+                              stripePublicKey: e.target.value.trim(),
+                            },
+                          }))
+                        }
+                        placeholder="pk_live_..."
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono focus:border-primary outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-muted-foreground">
+                          Stripe Secret Key (Optional / Backend Webhook Sync)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowSecretKey(!showSecretKey)}
+                          className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1"
+                        >
+                          {showSecretKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                          <span>{showSecretKey ? "Hide Secret" : "Show Secret"}</span>
+                        </button>
+                      </div>
+                      <input
+                        type={showSecretKey ? "text" : "password"}
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        value={draftPaymentSettings.onlinePayments.stripeSecretKey || ""}
+                        onChange={(e) =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            onlinePayments: {
+                              ...prev.onlinePayments,
+                              stripeSecretKey: e.target.value.trim(),
+                            },
+                          }))
+                        }
+                        placeholder="sk_live_••••••••"
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono focus:border-primary outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                        Bank Statement Descriptor
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={22}
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        value={draftPaymentSettings.onlinePayments.statementDescriptor}
+                        onChange={(e) =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            onlinePayments: {
+                              ...prev.onlinePayments,
+                              statementDescriptor: e.target.value.toUpperCase(),
+                            },
+                          }))
+                        }
+                        placeholder="REDYCAKES BAKERY"
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono uppercase focus:border-primary outline-none"
+                      />
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Appears on customer's credit card or bank statement (up to 22 characters).
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {draftPaymentSettings.onlinePayments.provider === "paystack" && (
+                  <div className="space-y-4 pt-2 border-t border-border/80">
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                        Paystack Public Key *
+                      </label>
+                      <input
+                        type="text"
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        value={draftPaymentSettings.onlinePayments.paystackPublicKey}
+                        onChange={(e) =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            onlinePayments: {
+                              ...prev.onlinePayments,
+                              paystackPublicKey: e.target.value.trim(),
+                            },
+                          }))
+                        }
+                        placeholder="pk_live_..."
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono focus:border-primary outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Hosted Payment Link */}
+                <div className="pt-2 border-t border-border/80">
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Direct Hosted Payment Link (Stripe Payment Link / Paystack Page URL)
+                  </label>
+                  <input
+                    type="url"
+                    disabled={!canManageUsers && !isSuperAdmin}
+                    value={draftPaymentSettings.onlinePayments.customPaymentLink}
+                    onChange={(e) =>
+                      updatePaymentDraft((prev) => ({
+                        ...prev,
+                        onlinePayments: {
+                          ...prev.onlinePayments,
+                          customPaymentLink: e.target.value.trim(),
+                        },
+                      }))
+                    }
+                    placeholder="https://buy.stripe.com/..."
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:border-primary outline-none font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Create a payment link in your Stripe Dashboard and paste it here if you prefer directing customers to a Stripe-hosted checkout.
+                  </p>
+                </div>
+
+                {/* Currency Selection */}
+                <div className="pt-2 border-t border-border/80">
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Storefront Settlement Currency
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { code: "GBP", name: "British Pound (£)" },
+                      { code: "EUR", name: "Euro (€)" },
+                      { code: "USD", name: "US Dollar ($)" },
+                      { code: "NGN", name: "Nigerian Naira (₦)" },
+                    ].map((c) => (
+                      <button
+                        key={c.code}
+                        type="button"
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        onClick={() =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            currency: c.code as PaymentCurrency,
+                          }))
+                        }
+                        className={`p-2.5 rounded-xl border text-xs font-bold transition text-left ${
+                          draftPaymentSettings.currency === c.code
+                            ? "border-primary bg-primary/10 text-primary shadow-soft"
+                            : "border-border hover:bg-accent text-foreground"
+                        }`}
+                      >
+                        <p className="font-extrabold">{c.code}</p>
+                        <p className="text-[11px] text-muted-foreground font-normal">{c.name}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 2: DIRECT BANK TRANSFER */}
+            {paymentSection === "bank" && (
+              <div className="rounded-3xl border border-border/80 bg-card p-6 shadow-soft space-y-6 animate-in fade-in duration-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/80">
+                  <div>
+                    <h2 className="text-base font-semibold">UK Faster Payments Bank Transfer Details</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Configure official bank details shown to clients on quotes, invoices, and during checkout.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-semibold text-muted-foreground">Bank Transfer Active:</label>
+                    <button
+                      type="button"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      onClick={() =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          bankTransfer: {
+                            ...prev.bankTransfer,
+                            enabled: !prev.bankTransfer.enabled,
+                          },
+                        }))
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        draftPaymentSettings.bankTransfer.enabled ? "bg-emerald-600" : "bg-muted"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          draftPaymentSettings.bankTransfer.enabled ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Bank Name *
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.bankTransfer.bankName}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          bankTransfer: { ...prev.bankTransfer, bankName: e.target.value },
+                        }))
+                      }
+                      placeholder="e.g. Barclays Bank UK or Starling Bank"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:border-primary outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Account Name *
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.bankTransfer.accountName}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          bankTransfer: { ...prev.bankTransfer, accountName: e.target.value },
+                        }))
+                      }
+                      placeholder="e.g. Redycakes Ltd"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:border-primary outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Sort Code (XX-XX-XX) *
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={8}
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.bankTransfer.sortCode}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          bankTransfer: { ...prev.bankTransfer, sortCode: e.target.value },
+                        }))
+                      }
+                      placeholder="20-04-15"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono focus:border-primary outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Account Number (8 digits) *
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.bankTransfer.accountNumber}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          bankTransfer: { ...prev.bankTransfer, accountNumber: e.target.value.replace(/\D/g, "") },
+                        }))
+                      }
+                      placeholder="83920147"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono focus:border-primary outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      IBAN (Optional / International Clients)
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.bankTransfer.iban || ""}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          bankTransfer: { ...prev.bankTransfer, iban: e.target.value.toUpperCase() },
+                        }))
+                      }
+                      placeholder="GB33BARC20041583920147"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono uppercase focus:border-primary outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      BIC / SWIFT (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.bankTransfer.swiftBic || ""}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          bankTransfer: { ...prev.bankTransfer, swiftBic: e.target.value.toUpperCase() },
+                        }))
+                      }
+                      placeholder="BARCGB22"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono uppercase focus:border-primary outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Payment Reference Prefix
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    disabled={!canManageUsers && !isSuperAdmin}
+                    value={draftPaymentSettings.bankTransfer.referencePrefix}
+                    onChange={(e) =>
+                      updatePaymentDraft((prev) => ({
+                        ...prev,
+                        bankTransfer: { ...prev.bankTransfer, referencePrefix: e.target.value.toUpperCase() },
+                      }))
+                    }
+                    placeholder="RCK-"
+                    className="w-48 rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono uppercase focus:border-primary outline-none"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    e.g. Order #1234 will be given reference <code className="font-mono text-primary font-bold">{draftPaymentSettings.bankTransfer.referencePrefix}1234</code>.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Reference Instructions for Customers
+                  </label>
+                  <textarea
+                    rows={2}
+                    disabled={!canManageUsers && !isSuperAdmin}
+                    value={draftPaymentSettings.bankTransfer.referenceInstructions}
+                    onChange={(e) =>
+                      updatePaymentDraft((prev) => ({
+                        ...prev,
+                        bankTransfer: { ...prev.bankTransfer, referenceInstructions: e.target.value },
+                      }))
+                    }
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground focus:border-primary outline-none"
+                  />
+                </div>
+
+                {/* Customer View Live Preview Card */}
+                <div className="pt-4 border-t border-border/80">
+                  <h3 className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Eye className="h-3.5 w-3.5 text-primary" />
+                    Customer View Preview (How it looks on /pay):
+                  </h3>
+
+                  <div className="max-w-md rounded-2xl border border-border/80 bg-secondary/30 p-4 space-y-2.5">
+                    <div className="flex items-center justify-between pb-2 border-b border-border/60 text-xs">
+                      <span className="text-muted-foreground">Bank Name</span>
+                      <span className="font-bold text-foreground">{draftPaymentSettings.bankTransfer.bankName}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pb-2 border-b border-border/60 text-xs">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Account Name</span>
+                        <span className="font-bold text-foreground">{draftPaymentSettings.bankTransfer.accountName}</span>
+                      </div>
+                      <span className="text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded font-bold">Copy</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pb-2 border-b border-border/60 text-xs">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Sort Code</span>
+                        <span className="font-mono font-bold text-primary">{draftPaymentSettings.bankTransfer.sortCode}</span>
+                      </div>
+                      <span className="text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded font-bold">Copy</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pb-2 border-b border-border/60 text-xs">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Account Number</span>
+                        <span className="font-mono font-bold text-primary">{draftPaymentSettings.bankTransfer.accountNumber}</span>
+                      </div>
+                      <span className="text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded font-bold">Copy</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 text-xs">
+                      <div>
+                        <span className="text-amber-600 dark:text-amber-400 font-bold block text-[11px]">Reference:</span>
+                        <span className="font-mono font-extrabold text-foreground">{draftPaymentSettings.bankTransfer.referencePrefix}SAMPLE</span>
+                      </div>
+                      <span className="text-[10px] bg-primary/10 text-primary border border-primary/30 px-2 py-0.5 rounded font-bold">Copy Ref</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 3: DEPOSIT RULES & POLICIES */}
+            {paymentSection === "rules" && (
+              <div className="rounded-3xl border border-border/80 bg-card p-6 shadow-soft space-y-6 animate-in fade-in duration-200">
+                <div className="pb-4 border-b border-border/80">
+                  <h2 className="text-base font-semibold">Deposit Calculation & Booking Rules</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Define deposit percentages, tasting box pricing, and customer terms.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Default Deposit Percentage (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="10"
+                        max="100"
+                        disabled={!canManageUsers && !isSuperAdmin}
+                        value={draftPaymentSettings.depositRules.depositPercentage}
+                        onChange={(e) =>
+                          updatePaymentDraft((prev) => ({
+                            ...prev,
+                            depositRules: {
+                              ...prev.depositRules,
+                              depositPercentage: parseInt(e.target.value) || 50,
+                            },
+                          }))
+                        }
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-bold focus:border-primary outline-none"
+                      />
+                      <span className="absolute right-3 top-2.5 text-xs text-muted-foreground font-bold">%</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Typically 50% to secure event date in calendar.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Tasting Box Flat Price ({draftPaymentSettings.currencySymbol})
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.depositRules.tastingBoxPrice}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          depositRules: {
+                            ...prev.depositRules,
+                            tastingBoxPrice: parseFloat(e.target.value) || 25,
+                          },
+                        }))
+                      }
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-bold text-primary focus:border-primary outline-none"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Charged 100% upfront on order.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Balance Due (Days Before Event)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.depositRules.balanceDueDaysBefore}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          depositRules: {
+                            ...prev.depositRules,
+                            balanceDueDaysBefore: parseInt(e.target.value) || 7,
+                          },
+                        }))
+                      }
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-bold focus:border-primary outline-none"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      e.g. 7 days prior to collection or delivery.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border/80">
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                    Deposit Policy & Cancellation Terms (Shown to Customers)
+                  </label>
+                  <textarea
+                    rows={3}
+                    disabled={!canManageUsers && !isSuperAdmin}
+                    value={draftPaymentSettings.depositRules.depositPolicyNotice}
+                    onChange={(e) =>
+                      updatePaymentDraft((prev) => ({
+                        ...prev,
+                        depositRules: { ...prev.depositRules, depositPolicyNotice: e.target.value },
+                      }))
+                    }
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground focus:border-primary outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/80">
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      WhatsApp Transfer Proof Number
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.notifications.whatsappNumber}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          notifications: { ...prev.notifications, whatsappNumber: e.target.value },
+                        }))
+                      }
+                      placeholder="447911123456"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:border-primary outline-none"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Customers can 1-click message their transfer screenshot directly to this number.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                      Billing & Accounts Notification Email
+                    </label>
+                    <input
+                      type="email"
+                      disabled={!canManageUsers && !isSuperAdmin}
+                      value={draftPaymentSettings.notifications.billingEmail}
+                      onChange={(e) =>
+                        updatePaymentDraft((prev) => ({
+                          ...prev,
+                          notifications: { ...prev.notifications, billingEmail: e.target.value },
+                        }))
+                      }
+                      placeholder="accounts@redycakes.co.uk"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus:border-primary outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 4: TRANSACTIONS AUDIT LOG */}
+            {paymentSection === "history" && (
+              <div className="rounded-3xl border border-border/80 bg-card p-6 shadow-soft space-y-4 animate-in fade-in duration-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-base font-semibold">Payment Transactions & Audit Log</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Real-time log of customer card authorizations, Faster Payments transfer notifications, and receipts.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fetchPaymentTransactions().then(setPaymentTransactions)}
+                    className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-accent text-foreground transition"
+                  >
+                    Refresh Log
+                  </button>
+                </div>
+
+                <div className="rounded-2xl border border-border/80 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="border-b border-border/80 bg-secondary/30 text-muted-foreground">
+                        <tr>
+                          <th className="p-3.5 font-semibold">Date & Time</th>
+                          <th className="p-3.5 font-semibold">Customer</th>
+                          <th className="p-3.5 font-semibold">Amount</th>
+                          <th className="p-3.5 font-semibold">Method</th>
+                          <th className="p-3.5 font-semibold">Reference</th>
+                          <th className="p-3.5 font-semibold">Status</th>
+                          <th className="p-3.5 font-semibold">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {paymentTransactions.map((tx) => (
+                          <tr key={tx.id} className="hover:bg-accent/30 transition">
+                            <td className="p-3.5 font-mono text-muted-foreground whitespace-nowrap">
+                              {new Date(tx.created_at).toLocaleString([], {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </td>
+                            <td className="p-3.5">
+                              <p className="font-bold text-foreground">{tx.customer_name}</p>
+                              <p className="text-[11px] text-muted-foreground">{tx.customer_email}</p>
+                            </td>
+                            <td className="p-3.5 font-bold text-primary whitespace-nowrap">
+                              {formatMoney(tx.amount, (tx.currency as PaymentCurrency) || draftPaymentSettings.currency)}
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap capitalize font-medium">
+                              {tx.method === "card" ? "💳 Card" : "🏦 Bank Transfer"}
+                            </td>
+                            <td className="p-3.5 font-mono text-xs font-bold text-foreground">
+                              {tx.reference}
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <span
+                                className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                  tx.status === "completed"
+                                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                                    : tx.status === "pending"
+                                    ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                                    : "bg-destructive/15 text-destructive"
+                                }`}
+                              >
+                                {tx.status}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-muted-foreground text-[11px] max-w-xs truncate">
+                              {tx.notes || "—"}
+                            </td>
+                          </tr>
+                        ))}
+                        {paymentTransactions.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                              No payment transactions recorded yet. Test transactions will appear here automatically.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* DATABASE & SQL TAB */}
         {activeTab === "database" && (
           <div className="space-y-6 max-w-5xl mx-auto">
@@ -2160,6 +3306,153 @@ function CmsPage() {
                   <p className="text-muted-foreground">{selectedOrder.notes}</p>
                 </div>
               )}
+
+              {/* Live Quote & Payment Management */}
+              <div className="p-3.5 rounded-2xl bg-secondary/40 border border-border/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                    <CreditCard className="h-3.5 w-3.5" />
+                    Quote & Payment Status
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                      selectedOrder.payment_status === "Paid in Full"
+                        ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                        : selectedOrder.payment_status === "Deposit Paid"
+                        ? "bg-blue-500/20 text-blue-700 dark:text-blue-300"
+                        : selectedOrder.payment_status === "Pending Verification"
+                        ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {selectedOrder.payment_status || "Unpaid"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">
+                      Agreed Quote ({draftPaymentSettings.currencySymbol})
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="e.g. 250.00"
+                      value={selectedOrder.quote_amount ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value === "" ? null : parseFloat(e.target.value);
+                        setSelectedOrder((prev) => (prev ? { ...prev, quote_amount: val } : null));
+                      }}
+                      className="w-full rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground focus:border-primary outline-none mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-muted-foreground">
+                        Deposit ({draftPaymentSettings.currencySymbol})
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedOrder.quote_amount) {
+                            const dep = Math.round(
+                              (selectedOrder.quote_amount * (draftPaymentSettings.depositRules.depositPercentage || 50)) / 100
+                            );
+                            setSelectedOrder((prev) => (prev ? { ...prev, deposit_amount: dep } : null));
+                          }
+                        }}
+                        className="text-[10px] text-primary hover:underline font-bold"
+                      >
+                        Auto 50%
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="e.g. 125.00"
+                      value={selectedOrder.deposit_amount ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value === "" ? null : parseFloat(e.target.value);
+                        setSelectedOrder((prev) => (prev ? { ...prev, deposit_amount: val } : null));
+                      }}
+                      className="w-full rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-primary focus:border-primary outline-none mt-1"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Payment Status</label>
+                    <select
+                      value={selectedOrder.payment_status || "Unpaid"}
+                      onChange={(e) => {
+                        const st = e.target.value as any;
+                        setSelectedOrder((prev) => (prev ? { ...prev, payment_status: st } : null));
+                      }}
+                      className="w-full rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground focus:border-primary outline-none mt-1"
+                    >
+                      <option value="Unpaid">Unpaid</option>
+                      <option value="Deposit Paid">Deposit Paid</option>
+                      <option value="Paid in Full">Paid in Full</option>
+                      <option value="Pending Verification">Pending Verification</option>
+                      <option value="Refunded">Refunded</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!selectedOrder) return;
+                        await updateOrderPayment(selectedOrder.id, {
+                          quote_amount: selectedOrder.quote_amount,
+                          deposit_amount: selectedOrder.deposit_amount,
+                          payment_status: selectedOrder.payment_status || "Unpaid",
+                          status:
+                            selectedOrder.payment_status === "Deposit Paid" ||
+                            selectedOrder.payment_status === "Paid in Full"
+                              ? "Confirmed"
+                              : selectedOrder.status,
+                        });
+                        setOrders((prev) =>
+                          prev.map((o) => (o.id === selectedOrder.id ? { ...o, ...selectedOrder } : o))
+                        );
+                        toast.success("Quote & payment details saved to database!");
+                      }}
+                      className="w-full btn btn-primary !py-1.5 text-xs font-semibold shadow-soft"
+                    >
+                      Save Pricing
+                    </button>
+                  </div>
+                </div>
+
+                {/* 1-Click Copy Payment Request */}
+                <div className="pt-2 border-t border-border/60 flex items-center justify-between">
+                  <span className="text-[11px] text-muted-foreground">
+                    Pay URL: <code className="text-primary font-mono">{`/pay?order=${selectedOrder.id.slice(0, 8)}`}</code>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const payUrl = `${window.location.origin}/pay?order=${selectedOrder.id}`;
+                      const msg =
+                        `Hi ${selectedOrder.name},\n\nThank you for choosing Redycakes! Here is your bespoke cake quote for your celebration on ${selectedOrder.event_date}:\n\n` +
+                        `🎂 Cake: ${(selectedOrder as any).cake_name || selectedOrder.occasion}\n` +
+                        `💰 Total Quote: ${formatMoney(selectedOrder.quote_amount || selectedOrder.budget, draftPaymentSettings.currency)}\n` +
+                        `🔒 Deposit to Secure Date: ${formatMoney(selectedOrder.deposit_amount || (selectedOrder.quote_amount ? selectedOrder.quote_amount * 0.5 : 50), draftPaymentSettings.currency)}\n\n` +
+                        `Pay online securely with Card or UK Faster Payments here:\n${payUrl}\n\n` +
+                        `Or Direct Bank Transfer:\nBank: ${draftPaymentSettings.bankTransfer.bankName}\nSort Code: ${draftPaymentSettings.bankTransfer.sortCode}\nAccount: ${draftPaymentSettings.bankTransfer.accountNumber}\nReference: ${draftPaymentSettings.bankTransfer.referencePrefix}${selectedOrder.id.slice(0, 8).toUpperCase()}`;
+                      navigator.clipboard.writeText(msg);
+                      toast.success("Complete quote & payment request copied to clipboard!");
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition"
+                  >
+                    <Copy className="h-3 w-3" />
+                    <span>Copy Quote & Pay Link</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Quick Actions in Modal */}
@@ -2486,6 +3779,104 @@ function CmsPage() {
                 className="btn btn-primary !py-2 !px-4 text-xs font-semibold"
               >
                 Save Privileges
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEST CHECKOUT PREVIEW MODAL */}
+      {showTestCheckoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-soft space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border/80 pb-3">
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-primary/20 text-primary">
+                  Interactive Preview
+                </span>
+                <h3 className="text-lg font-bold font-display mt-1">
+                  Customer Checkout Simulation ({draftPaymentSettings.onlinePayments.environment.toUpperCase()})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTestCheckoutModal(false)}
+                className="p-1.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              This preview shows how customers interact with your configured gateway and bank details on <code className="text-primary font-mono">/pay</code>.
+            </p>
+
+            {/* Simulated Checkout Box */}
+            <div className="rounded-2xl border border-border/70 bg-secondary/20 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground">Order: Wedding Tasting Box</p>
+                  <p className="text-xl font-extrabold font-display text-primary">
+                    {formatMoney(draftPaymentSettings.depositRules.tastingBoxPrice, draftPaymentSettings.currency)}
+                  </p>
+                </div>
+                <span className="text-[11px] font-mono bg-background border border-border px-2 py-1 rounded-lg">
+                  Ref: {draftPaymentSettings.bankTransfer.referencePrefix}PREVIEW1
+                </span>
+              </div>
+
+              {draftPaymentSettings.onlinePayments.enabled && (
+                <div className="p-3.5 rounded-xl border border-border/80 bg-card space-y-2 text-xs">
+                  <div className="flex items-center justify-between font-semibold">
+                    <span className="flex items-center gap-1.5">
+                      <CreditCard className="h-3.5 w-3.5 text-primary" />
+                      <span>Instant Card Payment ({draftPaymentSettings.onlinePayments.provider.toUpperCase()})</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-600 font-bold">Encrypted</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-background border border-border/60 font-mono text-[11px] text-muted-foreground">
+                    Public Key: {draftPaymentSettings.onlinePayments.stripePublicKey.slice(0, 16)}••••••••
+                  </div>
+                </div>
+              )}
+
+              {draftPaymentSettings.bankTransfer.enabled && (
+                <div className="p-3.5 rounded-xl border border-border/80 bg-card space-y-2 text-xs">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>UK Faster Payments Bank Transfer</span>
+                  </span>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2 rounded bg-background border border-border/60">
+                      <span className="text-muted-foreground block text-[10px]">Sort Code</span>
+                      <span className="font-mono font-bold text-foreground">{draftPaymentSettings.bankTransfer.sortCode}</span>
+                    </div>
+                    <div className="p-2 rounded bg-background border border-border/60">
+                      <span className="text-muted-foreground block text-[10px]">Account No</span>
+                      <span className="font-mono font-bold text-foreground">{draftPaymentSettings.bankTransfer.accountNumber}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-border/80 flex items-center justify-between">
+              <a
+                href="/pay"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary font-semibold hover:underline inline-flex items-center gap-1"
+              >
+                <span>Open Live /pay page</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setShowTestCheckoutModal(false)}
+                className="btn btn-primary !py-1.5 !px-4 text-xs font-semibold"
+              >
+                Close Preview
               </button>
             </div>
           </div>

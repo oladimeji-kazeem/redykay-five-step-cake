@@ -80,6 +80,9 @@ export function Footer() {
           <Link to="/order" className="font-semibold text-primary hover:underline underline-offset-4">
             Order form →
           </Link>
+          <Link to="/pay" className="font-semibold text-foreground hover:text-primary transition-colors">
+            Pay Invoice / Deposit →
+          </Link>
           <Link to="/cms" className="text-xs text-muted-foreground/70 hover:text-primary transition-colors col-span-2 pt-2 flex items-center gap-1">
             <span>🔒 Staff CMS Portal</span>
           </Link>

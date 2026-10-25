@@ -1,9 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { z } from "zod";
+import { CreditCard, Building2, CheckCircle2, Copy, Check, ArrowRight, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { seo } from "@/components/SiteLayout";
 import { useSiteContent } from "@/lib/siteContent";
-import { saveOrder } from "@/lib/databaseSchema";
+import { saveOrder, type OrderItem } from "@/lib/databaseSchema";
+import { usePaymentSettings, formatMoney } from "@/lib/paymentSettings";
 import { trackEvent } from "@/lib/analytics";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -25,8 +28,11 @@ const contactSchema = z.object({
 
 function Order() {
   const { content } = useSiteContent();
+  const { settings: paymentSettings } = usePaymentSettings();
   const search = Route.useSearch();
   const [step, setStep] = useState(0);
+  const [submittedOrder, setSubmittedOrder] = useState<OrderItem | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const contact = content.contact;
   const occasionsList = useMemo(() => {
@@ -88,7 +94,7 @@ function Order() {
         }
       }
 
-      await saveOrder({
+      const created = await saveOrder({
         name: d.name.trim(),
         email: d.email.trim(),
         phone: d.phone.trim() || null,
@@ -101,7 +107,11 @@ function Order() {
         fulfilment: d.fulfilment,
         notes: d.notes.trim() || null,
         inspiration_paths: fileNames,
+        quote_amount: d.occasion === "Tasting box" ? paymentSettings.depositRules.tastingBoxPrice : null,
+        deposit_amount: d.occasion === "Tasting box" ? paymentSettings.depositRules.tastingBoxPrice : null,
       });
+
+      setSubmittedOrder(created);
 
       trackEvent("order_submitted", {
         occasion: d.occasion,
@@ -117,12 +127,124 @@ function Order() {
     }
   }
 
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    toast.success(`${key} copied to clipboard!`);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
+
   if (status === "done") {
+    const orderRef = submittedOrder?.id
+      ? `${paymentSettings.bankTransfer.referencePrefix}${submittedOrder.id.slice(0, 8).toUpperCase()}`
+      : `${paymentSettings.bankTransfer.referencePrefix}ORDER`;
+
     return (
-      <section className="container-page max-w-2xl py-24 text-center">
+      <section className="container-page max-w-2xl py-16 sm:py-24 text-center animate-in fade-in zoom-in-95 duration-300">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 mb-3">
+          <CheckCircle2 className="h-8 w-8" />
+        </div>
         <p className="eyebrow">Request received</p>
-        <h1 className="mt-4 text-5xl">Thank you, {d.name.split(" ")[0]}!</h1>
-        <p className="mt-6 text-lg text-muted-foreground">Your cake request is with us. Expect a personal reply with your quote {contact.replyPromise}, sent to <strong className="text-foreground">{d.email}</strong>.</p>
+        <h1 className="mt-2 text-4xl sm:text-5xl font-display font-bold">Thank you, {d.name.split(" ")[0]}!</h1>
+        <p className="mt-4 text-base text-muted-foreground leading-relaxed">
+          Your cake request is with our baking studio. Expect a personal reply with your custom quote {contact.replyPromise}, sent to <strong className="text-foreground">{d.email}</strong>.
+        </p>
+
+        {/* Live Payment & Date Reservation Card */}
+        {paymentSettings.enabled && (
+          <div className="mt-8 rounded-3xl border border-primary/25 bg-card p-6 sm:p-8 text-left shadow-soft space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-border/80">
+              <div>
+                <span className="text-xs uppercase font-extrabold tracking-wider text-primary flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {d.occasion === "Tasting box" ? "Complete Your Tasting Box Order" : "Fast-Track Booking & Date Reservation"}
+                </span>
+                <p className="text-sm font-semibold text-foreground mt-0.5">
+                  {d.occasion === "Tasting box"
+                    ? `Tasting Box Fee: ${formatMoney(paymentSettings.depositRules.tastingBoxPrice, paymentSettings.currency)}`
+                    : `Securing your date: ${paymentSettings.depositRules.depositPercentage}% deposit required`}
+                </p>
+              </div>
+
+              <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-secondary text-foreground self-start sm:self-auto">
+                Ref: {orderRef}
+              </span>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {d.occasion === "Tasting box"
+                ? "Tasting boxes are prepared and dispatched once payment is confirmed. You can pay now with debit/credit card or bank transfer."
+                : "Want to reserve your celebration date right away? You can make an advance deposit or wait for our personal design quote."}
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <Link
+                to="/pay"
+                search={{
+                  order: submittedOrder?.id,
+                  type: d.occasion === "Tasting box" ? "tasting-box" : "deposit",
+                  amount: d.occasion === "Tasting box" ? String(paymentSettings.depositRules.tastingBoxPrice) : undefined,
+                  name: d.name,
+                  email: d.email,
+                }}
+                className="w-full sm:w-auto btn btn-primary flex items-center justify-center gap-2 !py-3 !px-6 text-xs font-bold"
+              >
+                <CreditCard className="h-4 w-4" />
+                <span>
+                  {d.occasion === "Tasting box"
+                    ? `Pay ${formatMoney(paymentSettings.depositRules.tastingBoxPrice, paymentSettings.currency)} Online Now`
+                    : "Make Online Deposit"}
+                </span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+
+              {paymentSettings.bankTransfer.enabled && (
+                <div className="text-xs text-muted-foreground">
+                  or via UK Faster Payments (Sort: <strong className="text-foreground font-mono">{paymentSettings.bankTransfer.sortCode}</strong>)
+                </div>
+              )}
+            </div>
+
+            {/* Quick Bank Details accordion snippet */}
+            {paymentSettings.bankTransfer.enabled && (
+              <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 text-xs space-y-2">
+                <div className="flex items-center justify-between font-semibold">
+                  <span className="flex items-center gap-1.5 text-foreground">
+                    <Building2 className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Bank Transfer Details: {paymentSettings.bankTransfer.bankName}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(orderRef, "Order Reference")}
+                    className="text-[11px] text-primary hover:underline font-bold"
+                  >
+                    {copiedKey === "Order Reference" ? "Copied!" : "Copy Ref"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-[11px] text-foreground">
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] font-sans">Sort Code:</span>
+                    {paymentSettings.bankTransfer.sortCode}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] font-sans">Account No:</span>
+                    {paymentSettings.bankTransfer.accountNumber}
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <span className="text-muted-foreground block text-[10px] font-sans">Reference:</span>
+                    <strong className="text-primary">{orderRef}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-8">
+          <Link to="/" className="text-xs text-muted-foreground hover:text-primary transition underline-offset-4 hover:underline">
+            ← Return to storefront
+          </Link>
+        </div>
       </section>
     );
   }
