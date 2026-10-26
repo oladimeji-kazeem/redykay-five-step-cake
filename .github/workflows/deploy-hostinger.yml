@@ -39,3 +39,6 @@ jobs:
           server-dir: ${{ secrets.HOSTINGER_SERVER_DIR || 'public_html/' }}
           local-dir: .output/public/
           dangerous-clean-slate: false
+          protocol: ${{ secrets.HOSTINGER_FTP_PROTOCOL || 'ftps' }}
+          port: ${{ secrets.HOSTINGER_FTP_PORT || 21 }}
+          security: loose

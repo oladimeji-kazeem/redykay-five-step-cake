@@ -73,29 +73,53 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Redycakes — Bespoke Cakes, Ordered the Easy Way" },
-      { name: "description", content: "Bespoke celebration, wedding and dietary-friendly cakes in the UK." },
-      { property: "og:title", content: "Redycakes — Bespoke Cakes, Ordered the Easy Way" },
-      { property: "og:description", content: "Bespoke celebration, wedding and dietary-friendly cakes in the UK." },
-      { property: "og:type", content: "website" },
-      { property: "og:image", content: "/redycakes_logo.png" },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "/redycakes_logo.png" },
-    ],
-    links: [
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Figtree:wght@400;500;600&display=swap" },
-      { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
-      { rel: "icon", href: "/redycakes_logo.png", type: "image/png" },
-      { rel: "apple-touch-icon", href: "/redycakes_logo.png" },
-    ],
-  }),
+  head: () => {
+    const siteUrl = "https://www.redycakes.org";
+    const title = "Redycakes — Bespoke Celebration & Wedding Cakes";
+    const description = "Artisanal celebration, wedding and dietary-friendly cakes handcrafted in the UK. Order online with our 5-step custom cake builder, tasting boxes & instant quotes.";
+    const ogImageUrl = `${siteUrl}/og-image.jpg`;
+
+    return {
+      meta: [
+        { charSet: "utf-8" },
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { title },
+        { name: "description", content: description },
+
+        // Open Graph / WhatsApp / Facebook / LinkedIn / iMessage
+        { property: "og:site_name", content: "Redycakes" },
+        { property: "og:type", content: "website" },
+        { property: "og:url", content: `${siteUrl}/` },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:locale", content: "en_GB" },
+        { property: "og:image", content: ogImageUrl },
+        { property: "og:image:secure_url", content: ogImageUrl },
+        { property: "og:image:type", content: "image/jpeg" },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "675" },
+        { property: "og:image:alt", content: "Redycakes luxury bespoke celebration and wedding cakes studio" },
+
+        // Twitter / X
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: description },
+        { name: "twitter:image", content: ogImageUrl },
+        { name: "twitter:image:alt", content: "Redycakes bespoke celebration cakes" },
+      ],
+      links: [
+        { rel: "canonical", href: `${siteUrl}/` },
+        { rel: "image_src", href: ogImageUrl },
+        { rel: "preconnect", href: "https://fonts.googleapis.com" },
+        { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+        { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Figtree:wght@400;500;600&display=swap" },
+        { rel: "stylesheet", href: appCss },
+        { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+        { rel: "icon", href: "/redycakes_logo.png", type: "image/png" },
+        { rel: "apple-touch-icon", href: "/og-square.jpg" },
+      ],
+    };
+  },
   shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
