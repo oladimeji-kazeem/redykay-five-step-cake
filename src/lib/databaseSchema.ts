@@ -202,6 +202,20 @@ GRANT ALL ON public.customer_reviews TO anon, authenticated, service_role;
 ALTER TABLE public.customer_reviews ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public customer_reviews policy" ON public.customer_reviews;
 CREATE POLICY "Public customer_reviews policy" ON public.customer_reviews FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- 13. Studio Theme & Visual Branding Table (Configurable by Admins & Superadmins)
+CREATE TABLE IF NOT EXISTS public.site_theme (
+  id text PRIMARY KEY DEFAULT 'current_theme',
+  theme_data jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by text
+);
+GRANT ALL ON public.site_theme TO anon, authenticated, service_role;
+ALTER TABLE public.site_theme ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read site_theme" ON public.site_theme;
+CREATE POLICY "Public read site_theme" ON public.site_theme FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "Privileged write site_theme" ON public.site_theme;
+CREATE POLICY "Privileged write site_theme" ON public.site_theme FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
 
 export const COMPLETE_DATABASE_SCHEMA_SQL = COMPLETE_SUPABASE_SQL;

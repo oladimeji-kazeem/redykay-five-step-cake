@@ -8,13 +8,14 @@ import {
   Scripts,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import appCss from "../styles.css?url";
 import { Header, Footer } from "@/components/SiteLayout";
 import { LiveChatWidget } from "@/components/LiveChatWidget";
 import { AnalyticsTracker } from "@/lib/analytics";
 import { Toaster } from "@/components/ui/sonner";
+import { applyThemeToDom, getLocalTheme, fetchActiveTheme } from "@/lib/themeService";
 
 function NotFoundComponent() {
   return (
@@ -146,6 +147,42 @@ function RootComponent() {
   const router = useRouter();
   const pathname = router.state.location.pathname;
   const isCms = pathname.startsWith("/cms");
+
+  useEffect(() => {
+    // 1. Apply local theme immediately
+    const local = getLocalTheme();
+    applyThemeToDom(local);
+
+    // 2. Fetch remote theme if configured
+    fetchActiveTheme().catch(console.debug);
+
+    // 3. Listen to local broadcast and window events
+    const handleThemeEvent = (e: any) => {
+      if (e?.detail?.theme) {
+        applyThemeToDom(e.detail.theme);
+      }
+    };
+    window.addEventListener("redycakes_theme_event", handleThemeEvent);
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        channel = new BroadcastChannel("redycakes_theme_broadcast");
+        channel.onmessage = (event) => {
+          if (event.data?.theme) {
+            applyThemeToDom(event.data.theme);
+          }
+        };
+      }
+    } catch {
+      // Ignore
+    }
+
+    return () => {
+      window.removeEventListener("redycakes_theme_event", handleThemeEvent);
+      if (channel) channel.close();
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

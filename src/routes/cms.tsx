@@ -51,6 +51,7 @@ import {
   MessageSquareHeart,
   ThumbsUp,
   Quote,
+  Palette,
 } from "lucide-react";
 import {
   AreaChart,
@@ -133,13 +134,24 @@ import {
   type ExperienceOccasion,
 } from "@/lib/feedbackService";
 import { ReviewModal } from "@/components/ReviewModal";
+import {
+  THEME_PRESETS,
+  DEFAULT_STUDIO_THEME,
+  getLocalTheme,
+  fetchActiveTheme,
+  applyThemeToDom,
+  publishStudioTheme,
+  resetStudioTheme,
+  type StudioTheme,
+  type ThemeColors,
+} from "@/lib/themeService";
 
 export const Route = createFileRoute("/cms")({
   head: () => seo("CMS Admin Studio — Redycakes", "Manage site content, orders, inquiries, web analytics and team access."),
   component: CmsPage,
 });
 
-type TabType = "overview" | "analytics" | "content" | "orders" | "messages" | "chats" | "reviews" | "users" | "payments" | "database";
+type TabType = "overview" | "analytics" | "content" | "theme" | "orders" | "messages" | "chats" | "reviews" | "users" | "payments" | "database";
 type ContentSection = "hero" | "cakes" | "trust" | "dietary" | "tasting" | "howItWorks" | "faq" | "about" | "contact";
 
 function CmsPage() {
@@ -252,6 +264,81 @@ function CmsPage() {
       return matchSearch && matchStatus && matchOccasion;
     });
   }, [reviews, reviewSearch, reviewStatusFilter, reviewOccasionFilter]);
+
+  // Studio Theme & Colors state
+  const [activeTheme, setActiveTheme] = useState<StudioTheme>(() => getLocalTheme());
+  const [draftTheme, setDraftTheme] = useState<StudioTheme>(() => getLocalTheme());
+  const [hasUnsavedThemeChanges, setHasUnsavedThemeChanges] = useState(false);
+  const [isPublishingTheme, setIsPublishingTheme] = useState(false);
+
+  // Can publish check (Superadmin and Admin only; Editors can preview only)
+  const canPublishTheme = canManageUsers || isSuperAdmin;
+
+  const handleSelectPreset = (preset: StudioTheme) => {
+    const updated: StudioTheme = {
+      ...preset,
+      updated_at: new Date().toISOString(),
+    };
+    setDraftTheme(updated);
+    setHasUnsavedThemeChanges(true);
+    // Apply live preview in current session immediately
+    applyThemeToDom(updated);
+    toast.info(`Preset selected: ${preset.name}`, {
+      description: "Previewing in current session. Click 'Publish to Storefront' to save for all visitors.",
+    });
+  };
+
+  const handleUpdateCustomColor = (key: keyof ThemeColors, value: string) => {
+    setDraftTheme((prev) => {
+      const nextColors = { ...prev.colors, [key]: value };
+      const nextTheme: StudioTheme = {
+        ...prev,
+        id: prev.id === "signature-berry" ? "custom" : prev.id,
+        name: prev.id === "signature-berry" ? "Custom Studio Palette" : prev.name,
+        colors: nextColors,
+      };
+      setHasUnsavedThemeChanges(true);
+      applyThemeToDom(nextTheme);
+      return nextTheme;
+    });
+  };
+
+  const handlePublishTheme = async () => {
+    if (!canPublishTheme) {
+      toast.error("Privilege restriction: Only Superadmins and Admins can publish theme changes to all visitors.");
+      return;
+    }
+
+    setIsPublishingTheme(true);
+    const toastId = toast.loading("Publishing studio theme to storefront...");
+    try {
+      await publishStudioTheme(draftTheme, currentUser?.email);
+      setActiveTheme(draftTheme);
+      setHasUnsavedThemeChanges(false);
+      toast.success("Studio theme published successfully!", {
+        id: toastId,
+        description: `Active Palette: "${draftTheme.name}" is now live across all storefront pages.`,
+      });
+    } catch {
+      toast.error("Failed to publish theme. Please try again.", { id: toastId });
+    } finally {
+      setIsPublishingTheme(false);
+    }
+  };
+
+  const handleResetThemeToDefault = async () => {
+    if (!canPublishTheme) {
+      toast.error("Privilege restriction: Only Superadmins and Admins can reset the theme.");
+      return;
+    }
+    if (!confirm("Are you sure you want to reset the app theme to the original Royal Berry & Violet default?")) return;
+
+    const def = await resetStudioTheme(currentUser?.email);
+    setActiveTheme(def);
+    setDraftTheme(def);
+    setHasUnsavedThemeChanges(false);
+    toast.info("Theme reset to original Royal Berry & Violet.");
+  };
 
   // Hostinger SMTP state (smtp.hostinger.com:465)
   const [smtpConfig, setSmtpConfig] = useState<HostingerSmtpConfig>(() => getHostingerSmtpSettings());
@@ -435,6 +522,10 @@ function CmsPage() {
     fetchContactMessages().then(setMessages).catch(console.error);
     fetchPaymentTransactions().then(setPaymentTransactions).catch(console.error);
     fetchAllReviews().then(setReviews).catch(console.error);
+    fetchActiveTheme().then((t) => {
+      setActiveTheme(t);
+      setDraftTheme(t);
+    }).catch(console.debug);
     fetchChatConversations().then((list) => {
       setConversations(list);
       if (list.length > 0 && !selectedChatId) {
@@ -443,7 +534,7 @@ function CmsPage() {
     }).catch(console.error);
   }, [currentUser, analyticsDays]);
 
-  // Periodic poll & cross-tab sync for chats & reviews
+  // Periodic poll & cross-tab sync for chats, reviews & themes
   useEffect(() => {
     if (!currentUser) return;
     const interval = setInterval(() => {
@@ -458,14 +549,23 @@ function CmsPage() {
     const handleReviewBroadcast = () => {
       fetchAllReviews().then(setReviews).catch(console.debug);
     };
+    const handleThemeBroadcast = (e: any) => {
+      if (e?.detail?.theme) {
+        setActiveTheme(e.detail.theme);
+        setDraftTheme(e.detail.theme);
+        setHasUnsavedThemeChanges(false);
+      }
+    };
 
     window.addEventListener("redycakes_chat_event", handleChatBroadcast);
     window.addEventListener("redycakes_reviews_event", handleReviewBroadcast);
+    window.addEventListener("redycakes_theme_event", handleThemeBroadcast);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener("redycakes_chat_event", handleChatBroadcast);
       window.removeEventListener("redycakes_reviews_event", handleReviewBroadcast);
+      window.removeEventListener("redycakes_theme_event", handleThemeBroadcast);
     };
   }, [currentUser]);
 
@@ -931,6 +1031,27 @@ function CmsPage() {
               </div>
               {hasUnsavedChanges && (
                 <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" title="Unsaved changes" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("theme")}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "theme"
+                  ? "bg-primary text-primary-foreground shadow-soft"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Palette className="h-4 w-4" />
+                <span>Theme & Colors</span>
+              </div>
+              {hasUnsavedThemeChanges ? (
+                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" title="Unsaved theme changes" />
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-bold">
+                  Luxe
+                </span>
               )}
             </button>
 
@@ -2263,6 +2384,522 @@ function CmsPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* STUDIO THEME & VISUAL BRANDING TAB */}
+        {activeTab === "theme" && (
+          <div className="space-y-8 max-w-6xl mx-auto">
+            {/* Header & Main Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold">Studio Theme & Colors</h1>
+                  {hasUnsavedThemeChanges && (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-semibold animate-pulse">
+                      Unsaved Preview Changes
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Customize your cake studio's signature colors, luxury palettes, and corner styles across all storefront pages.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleResetThemeToDefault}
+                  disabled={!canPublishTheme || isPublishingTheme}
+                  className="btn btn-secondary !py-2 !px-3.5 text-xs font-semibold flex items-center gap-1.5"
+                  title="Revert back to original Royal Berry palette"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Reset Default</span>
+                </button>
+
+                <a
+                  href="/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary !py-2 !px-3.5 text-xs font-semibold flex items-center gap-1.5"
+                  title="View storefront in new tab"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Preview Storefront</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={handlePublishTheme}
+                  disabled={isPublishingTheme || !canPublishTheme}
+                  className="btn btn-primary !py-2 !px-5 text-xs font-semibold flex items-center gap-1.5 shadow-soft disabled:opacity-50"
+                  title={!canPublishTheme ? "Admin or Superadmin role required to publish" : "Publish to all storefront visitors"}
+                >
+                  {isPublishingTheme ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Publishing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-3.5 w-3.5" />
+                      <span>Publish to Storefront</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Permission Notice for Editors */}
+            {!canPublishTheme && (
+              <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-3">
+                <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-sm">Preview-Only Access (Editor Role)</p>
+                  <p className="mt-0.5 opacity-90 leading-relaxed">
+                    You can preview themes and customize colors in your current session. To publish theme changes permanently to all public storefront visitors, an <strong>Admin</strong> or <strong>Superadmin</strong> role is required.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Live Storefront Interactive Preview Card */}
+            <div className="rounded-3xl border border-border/80 bg-card p-6 md:p-8 shadow-soft space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/60">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-xl bg-primary/15 text-primary flex items-center justify-center">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-semibold text-foreground text-base">
+                      Live Storefront Component Preview
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Active Palette: <span className="font-semibold text-foreground">{draftTheme.name}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Radius:</span>
+                  <span className="font-mono px-2 py-0.5 rounded bg-secondary text-foreground text-[11px] font-semibold">
+                    {draftTheme.colors.radius}
+                  </span>
+                  {draftTheme.isDark && (
+                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 text-[10px] font-bold border border-slate-700">
+                      Dark Mode Active
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Sample Storefront Mock Banner */}
+              <div
+                className="p-6 md:p-8 rounded-2xl border border-border/70 space-y-6 transition-all duration-300"
+                style={{
+                  background: draftTheme.colors.bodyBackground || draftTheme.colors.background,
+                  color: draftTheme.colors.foreground,
+                }}
+              >
+                <div className="space-y-2 max-w-xl">
+                  <span className="eyebrow" style={{ color: draftTheme.colors.primary }}>
+                    Bespoke Cake Studio · London & Surrey
+                  </span>
+                  <h2 className="text-2xl md:text-4xl font-display font-bold leading-tight" style={{ color: draftTheme.colors.foreground }}>
+                    Every cake starts with a <em className="not-italic" style={{ color: draftTheme.colors.primary }}>story.</em>
+                  </h2>
+                  <p className="text-sm opacity-80 leading-relaxed">
+                    Handcrafted botanical wedding tiers and dietary-friendly celebrations with clear answers, honest timelines, and flavours people rave about.
+                  </p>
+                </div>
+
+                {/* Interactive Mock Buttons & Chips */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    className="btn btn-primary text-xs !py-2.5 !px-5 shadow-soft"
+                    style={{
+                      background: `linear-gradient(135deg, ${draftTheme.colors.primary} 0%, color-mix(in oklab, ${draftTheme.colors.primary} 80%, #000) 100%)`,
+                      color: draftTheme.colors.primaryForeground,
+                    }}
+                  >
+                    Start Your Custom Order →
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-outline text-xs !py-2.5 !px-5"
+                    style={{
+                      borderColor: draftTheme.colors.border,
+                      color: draftTheme.colors.foreground,
+                      background: draftTheme.colors.card,
+                    }}
+                  >
+                    Order Tasting Box (£25)
+                  </button>
+
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span
+                      className="chip !text-xs !py-1 !px-3 font-semibold"
+                      data-active="true"
+                      style={{
+                        background: draftTheme.colors.primary,
+                        color: draftTheme.colors.primaryForeground,
+                        borderColor: draftTheme.colors.primary,
+                      }}
+                    >
+                      Wedding Tiers
+                    </span>
+                    <span
+                      className="chip !text-xs !py-1 !px-3"
+                      style={{
+                        background: draftTheme.colors.card,
+                        color: draftTheme.colors.foreground,
+                        borderColor: draftTheme.colors.border,
+                      }}
+                    >
+                      Vegan & Gluten-Free
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sample Review Testimonial Card */}
+                <div
+                  className="p-4 rounded-xl border space-y-2 text-xs shadow-sm max-w-lg"
+                  style={{
+                    background: draftTheme.colors.card,
+                    borderColor: draftTheme.colors.border,
+                    color: draftTheme.colors.cardForeground || draftTheme.colors.foreground,
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex text-amber-400 text-xs">★★★★★</div>
+                    <span
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={{
+                        background: draftTheme.colors.secondary,
+                        color: draftTheme.colors.secondaryForeground,
+                      }}
+                    >
+                      Verified Wedding Order
+                    </span>
+                  </div>
+                  <p className="italic leading-relaxed">
+                    “Our three-tier botanical wedding cake at Highfield Manor was nothing short of a masterpiece. The edible petals matched my bouquet perfectly!”
+                  </p>
+                  <div className="flex items-center justify-between font-semibold opacity-80 pt-1 text-[11px]">
+                    <span>— Sarah & Tom Montgomery</span>
+                    <span>Richmond, Surrey</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Curated Luxury Presets Section */}
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-display font-bold">Curated Luxury Studio Presets</h2>
+                <p className="text-xs text-muted-foreground">
+                  Select a master palette designed for modern artisanal cake studios and wedding ateliers. Click any preset to preview it instantly.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {THEME_PRESETS.map((preset) => {
+                  const isCurrent = draftTheme.name === preset.name;
+                  return (
+                    <div
+                      key={preset.id}
+                      onClick={() => handleSelectPreset(preset)}
+                      className={`cursor-pointer p-5 rounded-3xl border transition-all duration-200 hover:shadow-soft hover:-translate-y-1 relative flex flex-col justify-between ${
+                        isCurrent
+                          ? "bg-card border-primary ring-2 ring-primary/20 shadow-soft"
+                          : "bg-card/70 border-border/80 hover:border-primary/50"
+                      }`}
+                    >
+                      <div>
+                        {/* Swatches pill */}
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-1.5 p-1 rounded-full bg-secondary/50 border border-border/60">
+                            <span
+                              className="h-5 w-5 rounded-full border border-black/10 shadow-sm"
+                              style={{ backgroundColor: preset.colors.primary }}
+                              title="Primary accent"
+                            />
+                            <span
+                              className="h-5 w-5 rounded-full border border-black/10 shadow-sm"
+                              style={{ backgroundColor: preset.colors.secondary }}
+                              title="Secondary tint"
+                            />
+                            <span
+                              className="h-5 w-5 rounded-full border border-black/10 shadow-sm"
+                              style={{ backgroundColor: preset.colors.background }}
+                              title="Page background"
+                            />
+                            <span
+                              className="h-5 w-5 rounded-full border border-black/10 shadow-sm"
+                              style={{ backgroundColor: preset.colors.foreground }}
+                              title="Heading text"
+                            />
+                          </div>
+
+                          {isCurrent ? (
+                            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-primary text-primary-foreground shadow-sm">
+                              Active
+                            </span>
+                          ) : preset.isDark ? (
+                            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-900 text-amber-300 border border-slate-700">
+                              Dark
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <h3 className="font-semibold text-foreground text-sm font-display">{preset.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{preset.tagline}</p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between">
+                        <span className="text-[11px] text-muted-foreground font-mono">
+                          {preset.colors.radius} radius
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectPreset(preset);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                            isCurrent
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground"
+                          }`}
+                        >
+                          {isCurrent ? "Selected" : "Apply Preset"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bespoke Fine-Grained Color Controls */}
+            <div className="rounded-3xl border border-border/80 bg-card p-6 md:p-8 shadow-soft space-y-6">
+              <div>
+                <h2 className="text-lg font-display font-bold">Fine-Grained Custom Colors</h2>
+                <p className="text-xs text-muted-foreground">
+                  Adjust individual color channels. Changes reflect immediately in your preview above.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Primary Brand Accent */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Primary Brand Accent</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.primary.startsWith("#") ? draftTheme.colors.primary : "#8E24AA"}
+                      onChange={(e) => handleUpdateCustomColor("primary", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.primary}
+                    onChange={(e) => handleUpdateCustomColor("primary", e.target.value)}
+                    placeholder="#8E24AA or oklch(...)"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">CTA buttons, active links, badges</p>
+                </div>
+
+                {/* Primary Text Color */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Primary Text Color</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.primaryForeground.startsWith("#") ? draftTheme.colors.primaryForeground : "#ffffff"}
+                      onChange={(e) => handleUpdateCustomColor("primaryForeground", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.primaryForeground}
+                    onChange={(e) => handleUpdateCustomColor("primaryForeground", e.target.value)}
+                    placeholder="#ffffff"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Text inside primary buttons</p>
+                </div>
+
+                {/* Secondary Background Tint */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Secondary Tint</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.secondary.startsWith("#") ? draftTheme.colors.secondary : "#F8EAF9"}
+                      onChange={(e) => handleUpdateCustomColor("secondary", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.secondary}
+                    onChange={(e) => handleUpdateCustomColor("secondary", e.target.value)}
+                    placeholder="#F8EAF9"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Pill chips & soft highlights</p>
+                </div>
+
+                {/* Secondary Text Color */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Secondary Text</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.secondaryForeground.startsWith("#") ? draftTheme.colors.secondaryForeground : "#4A154B"}
+                      onChange={(e) => handleUpdateCustomColor("secondaryForeground", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.secondaryForeground}
+                    onChange={(e) => handleUpdateCustomColor("secondaryForeground", e.target.value)}
+                    placeholder="#4A154B"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Text on secondary pills</p>
+                </div>
+
+                {/* Page Background */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Page Background</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.background.startsWith("#") ? draftTheme.colors.background : "#FAF7FD"}
+                      onChange={(e) => handleUpdateCustomColor("background", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.background}
+                    onChange={(e) => handleUpdateCustomColor("background", e.target.value)}
+                    placeholder="#FAF7FD"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Main background color</p>
+                </div>
+
+                {/* Headings & Text Color */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Heading & Body Text</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.foreground.startsWith("#") ? draftTheme.colors.foreground : "#2B1238"}
+                      onChange={(e) => handleUpdateCustomColor("foreground", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.foreground}
+                    onChange={(e) => handleUpdateCustomColor("foreground", e.target.value)}
+                    placeholder="#2B1238"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Typography and title color</p>
+                </div>
+
+                {/* Card Surface */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Card Background</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.card.startsWith("#") ? draftTheme.colors.card : "#ffffff"}
+                      onChange={(e) => handleUpdateCustomColor("card", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.card}
+                    onChange={(e) => handleUpdateCustomColor("card", e.target.value)}
+                    placeholder="#ffffff"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Elevated cards & modals</p>
+                </div>
+
+                {/* Border & Dividers */}
+                <div className="p-3.5 rounded-2xl bg-secondary/30 border border-border/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Border & Lines</label>
+                    <input
+                      type="color"
+                      value={draftTheme.colors.border.startsWith("#") ? draftTheme.colors.border : "#ECD6EE"}
+                      onChange={(e) => handleUpdateCustomColor("border", e.target.value)}
+                      className="h-6 w-8 rounded cursor-pointer border-0 bg-transparent"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={draftTheme.colors.border}
+                    onChange={(e) => handleUpdateCustomColor("border", e.target.value)}
+                    placeholder="#ECD6EE"
+                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border bg-background"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Hairline borders and inputs</p>
+                </div>
+              </div>
+
+              {/* Corner Radius Controls */}
+              <div className="pt-4 border-t border-border/60">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Corner Radius Styling</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Controls the roundness of buttons, cards, gallery photos, and modals.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {[
+                      { label: "Soft (1rem)", value: "1rem" },
+                      { label: "Pill (1.5rem)", value: "1.5rem" },
+                      { label: "Gentle (0.5rem)", value: "0.5rem" },
+                      { label: "Sharp (0.125rem)", value: "0.125rem" },
+                    ].map((rad) => {
+                      const isSelected = draftTheme.colors.radius === rad.value;
+                      return (
+                        <button
+                          key={rad.value}
+                          type="button"
+                          onClick={() => handleUpdateCustomColor("radius", rad.value)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "bg-secondary text-foreground hover:bg-accent"
+                          }`}
+                        >
+                          {rad.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
