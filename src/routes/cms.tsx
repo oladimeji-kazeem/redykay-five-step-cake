@@ -46,6 +46,11 @@ import {
   RotateCw,
   Inbox,
   X,
+  Star,
+  MessageSquarePlus,
+  MessageSquareHeart,
+  ThumbsUp,
+  Quote,
 } from "lucide-react";
 import {
   AreaChart,
@@ -117,13 +122,24 @@ import {
   testHostingerSmtpConnection,
   type HostingerSmtpConfig,
 } from "@/lib/emailService";
+import {
+  fetchAllReviews,
+  updateReviewStatus,
+  addReviewStudioReply,
+  deleteCustomerReview,
+  calculateReviewStats,
+  type CustomerReview,
+  type FeedbackStatus,
+  type ExperienceOccasion,
+} from "@/lib/feedbackService";
+import { ReviewModal } from "@/components/ReviewModal";
 
 export const Route = createFileRoute("/cms")({
   head: () => seo("CMS Admin Studio — Redycakes", "Manage site content, orders, inquiries, web analytics and team access."),
   component: CmsPage,
 });
 
-type TabType = "overview" | "analytics" | "content" | "orders" | "messages" | "chats" | "users" | "payments" | "database";
+type TabType = "overview" | "analytics" | "content" | "orders" | "messages" | "chats" | "reviews" | "users" | "payments" | "database";
 type ContentSection = "hero" | "cakes" | "trust" | "dietary" | "tasting" | "howItWorks" | "faq" | "about" | "contact";
 
 function CmsPage() {
@@ -204,6 +220,38 @@ function CmsPage() {
       return matchSearch && matchFilter;
     });
   }, [conversations, chatSearch, chatFilter]);
+
+  // Customer Reviews & Feedback state
+  const [reviews, setReviews] = useState<CustomerReview[]>([]);
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<"all" | FeedbackStatus>("all");
+  const [reviewOccasionFilter, setReviewOccasionFilter] = useState<string>("all");
+  const [replyingReview, setReplyingReview] = useState<CustomerReview | null>(null);
+  const [studioReplyInput, setStudioReplyInput] = useState("");
+  const [isSavingStudioReply, setIsSavingStudioReply] = useState(false);
+  const [showAdminReviewModal, setShowAdminReviewModal] = useState(false);
+
+  const pendingReviewsCount = useMemo(
+    () => reviews.filter((r) => r.status === "pending").length,
+    [reviews]
+  );
+  const reviewStats = useMemo(() => calculateReviewStats(reviews), [reviews]);
+
+  const filteredReviewsList = useMemo(() => {
+    return reviews.filter((r) => {
+      const matchSearch =
+        r.name.toLowerCase().includes(reviewSearch.toLowerCase()) ||
+        r.email.toLowerCase().includes(reviewSearch.toLowerCase()) ||
+        (r.location || "").toLowerCase().includes(reviewSearch.toLowerCase()) ||
+        (r.flavour || "").toLowerCase().includes(reviewSearch.toLowerCase()) ||
+        r.review_text.toLowerCase().includes(reviewSearch.toLowerCase());
+      const matchStatus =
+        reviewStatusFilter === "all" ? true : r.status === reviewStatusFilter;
+      const matchOccasion =
+        reviewOccasionFilter === "all" ? true : r.occasion === reviewOccasionFilter;
+      return matchSearch && matchStatus && matchOccasion;
+    });
+  }, [reviews, reviewSearch, reviewStatusFilter, reviewOccasionFilter]);
 
   // Hostinger SMTP state (smtp.hostinger.com:465)
   const [smtpConfig, setSmtpConfig] = useState<HostingerSmtpConfig>(() => getHostingerSmtpSettings());
@@ -386,6 +434,7 @@ function CmsPage() {
     fetchOrders().then(setOrders).catch(console.error);
     fetchContactMessages().then(setMessages).catch(console.error);
     fetchPaymentTransactions().then(setPaymentTransactions).catch(console.error);
+    fetchAllReviews().then(setReviews).catch(console.error);
     fetchChatConversations().then((list) => {
       setConversations(list);
       if (list.length > 0 && !selectedChatId) {
@@ -394,7 +443,7 @@ function CmsPage() {
     }).catch(console.error);
   }, [currentUser, analyticsDays]);
 
-  // Periodic poll & cross-tab sync for chats
+  // Periodic poll & cross-tab sync for chats & reviews
   useEffect(() => {
     if (!currentUser) return;
     const interval = setInterval(() => {
@@ -406,11 +455,17 @@ function CmsPage() {
     const handleChatBroadcast = () => {
       fetchChatConversations().then(setConversations).catch(console.debug);
     };
+    const handleReviewBroadcast = () => {
+      fetchAllReviews().then(setReviews).catch(console.debug);
+    };
+
     window.addEventListener("redycakes_chat_event", handleChatBroadcast);
+    window.addEventListener("redycakes_reviews_event", handleReviewBroadcast);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener("redycakes_chat_event", handleChatBroadcast);
+      window.removeEventListener("redycakes_reviews_event", handleReviewBroadcast);
     };
   }, [currentUser]);
 
@@ -434,6 +489,64 @@ function CmsPage() {
     fetchContactMessages().then(setMessages);
     fetchPaymentTransactions().then(setPaymentTransactions);
     fetchChatConversations().then(setConversations);
+    fetchAllReviews().then(setReviews);
+  };
+
+  // Review action handlers
+  const handleUpdateReviewStatus = async (reviewId: string, status: FeedbackStatus) => {
+    const ok = await updateReviewStatus(reviewId, status);
+    if (ok) {
+      setReviews((prev) => prev.map((r) => (r.id === reviewId ? { ...r, status } : r)));
+      toast.success(`Review status changed to "${status.toUpperCase()}"`, {
+        description: status === "approved" || status === "featured"
+          ? "This review is now visible on the public storefront."
+          : "Review is hidden from public storefront.",
+      });
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    if (!confirm("Are you sure you want to delete this customer review? This cannot be undone.")) return;
+    const ok = await deleteCustomerReview(reviewId);
+    if (ok) {
+      setReviews((prev) => prev.filter((r) => r.id !== reviewId));
+      toast.success("Review deleted successfully.");
+    }
+  };
+
+  const handleOpenStudioReply = (review: CustomerReview) => {
+    setReplyingReview(review);
+    setStudioReplyInput(review.admin_reply || "");
+  };
+
+  const handleSaveStudioReply = async () => {
+    if (!replyingReview) return;
+    setIsSavingStudioReply(true);
+    try {
+      const ok = await addReviewStudioReply(replyingReview.id, studioReplyInput);
+      if (ok) {
+        setReviews((prev) =>
+          prev.map((r) =>
+            r.id === replyingReview.id
+              ? {
+                  ...r,
+                  admin_reply: studioReplyInput.trim(),
+                  admin_replied_at: new Date().toISOString(),
+                }
+              : r
+          )
+        );
+        toast.success("Studio response published!", {
+          description: "Your official reply is now visible on this review across the site.",
+        });
+        setReplyingReview(null);
+        setStudioReplyInput("");
+      }
+    } catch {
+      toast.error("Failed to save studio reply.");
+    } finally {
+      setIsSavingStudioReply(false);
+    }
   };
 
   // Chat action handlers
@@ -880,6 +993,27 @@ function CmsPage() {
                   {activeChatsCount}
                 </span>
               ) : null}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("reviews")}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "reviews"
+                  ? "bg-primary text-primary-foreground shadow-soft"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
+                <span>Customer Reviews</span>
+              </div>
+              {pendingReviewsCount > 0 ? (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500 text-white font-bold animate-pulse">
+                  {pendingReviewsCount}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">{reviews.length}</span>
+              )}
             </button>
 
             <button
@@ -2811,6 +2945,476 @@ function CmsPage() {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* CUSTOMER REVIEWS & FEEDBACK TAB */}
+        {activeTab === "reviews" && (
+          <div className="space-y-6 max-w-7xl mx-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold">Customer Reviews & Feedback</h1>
+                  {pendingReviewsCount > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold">
+                      {pendingReviewsCount} Pending
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Moderate customer ratings, approve submissions for public display, feature best stories, and post official studio responses.
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={refreshData}
+                  className="btn btn-secondary !py-2 !px-3.5 text-xs font-semibold flex items-center gap-1.5"
+                  title="Refresh customer reviews"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  <span>Refresh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminReviewModal(true)}
+                  className="btn btn-primary !py-2 !px-4 text-xs font-semibold flex items-center gap-1.5 shadow-soft"
+                >
+                  <MessageSquarePlus className="h-4 w-4" />
+                  <span>+ Add Review</span>
+                </button>
+              </div>
+            </div>
+
+            {/* KPI Metrics Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Average Rating</span>
+                  <div className="flex text-amber-400 text-xs">
+                    {"★".repeat(Math.round(reviewStats.average || 5))}
+                  </div>
+                </div>
+                <p className="mt-2 text-2xl font-bold font-display text-foreground">
+                  {reviewStats.average > 0 ? reviewStats.average.toFixed(1) : "5.0"}
+                  <span className="text-xs font-normal text-muted-foreground ml-1">/ 5.0</span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Across all verified submissions</p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Reviews</span>
+                <p className="mt-2 text-2xl font-bold font-display text-foreground">
+                  {reviewStats.totalCount}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {reviews.filter((r) => r.status === "approved" || r.status === "featured").length} live on storefront
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-card border border-border/80 shadow-sm">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recommend Rate</span>
+                <p className="mt-2 text-2xl font-bold font-display text-emerald-600 dark:text-emerald-400">
+                  {reviewStats.recommendPercentage}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Would recommend Redycakes</p>
+              </div>
+
+              <div className={`p-4 rounded-2xl border shadow-sm ${
+                pendingReviewsCount > 0
+                  ? "bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200"
+                  : "bg-card border border-border/80"
+              }`}>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pending Moderation</span>
+                <p className={`mt-2 text-2xl font-bold font-display ${pendingReviewsCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
+                  {pendingReviewsCount}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {pendingReviewsCount > 0 ? "Awaiting your review & approval" : "All reviews processed"}
+                </p>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between p-3.5 rounded-2xl bg-card border border-border/80">
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={reviewSearch}
+                  onChange={(e) => setReviewSearch(e.target.value)}
+                  placeholder="Search by reviewer, email, location, flavour, or review text..."
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex flex-wrap items-center gap-1">
+                {[
+                  { key: "all", label: "All", count: reviews.length },
+                  { key: "pending", label: "Pending", count: reviews.filter((r) => r.status === "pending").length },
+                  { key: "approved", label: "Approved", count: reviews.filter((r) => r.status === "approved").length },
+                  { key: "featured", label: "Featured", count: reviews.filter((r) => r.status === "featured").length },
+                  { key: "archived", label: "Archived", count: reviews.filter((r) => r.status === "archived").length },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setReviewStatusFilter(tab.key as any)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                      reviewStatusFilter === tab.key
+                        ? "bg-primary text-primary-foreground font-semibold shadow-soft"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    }`}
+                  >
+                    {tab.label} <span className="opacity-75">({tab.count})</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Occasion Filter */}
+              <div className="shrink-0">
+                <select
+                  value={reviewOccasionFilter}
+                  onChange={(e) => setReviewOccasionFilter(e.target.value)}
+                  className="px-3 py-2 text-xs rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="all">All Occasions</option>
+                  <option value="Wedding">Wedding</option>
+                  <option value="Birthday">Birthday</option>
+                  <option value="Celebration">Celebration</option>
+                  <option value="Tasting Box">Tasting Box</option>
+                  <option value="Dietary-Friendly">Dietary-Friendly</option>
+                  <option value="Corporate">Corporate</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Reviews List */}
+            {filteredReviewsList.length === 0 ? (
+              <div className="py-16 text-center rounded-3xl border border-dashed border-border/80 bg-card/40 p-8">
+                <Quote className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                <h3 className="text-base font-semibold text-foreground">No customer reviews match your filters</h3>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                  Try adjusting your search query, status tabs, or occasion filter.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredReviewsList.map((review) => {
+                  const createdDate = new Date(review.created_at).toLocaleString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <article
+                      key={review.id}
+                      className="p-5 md:p-6 rounded-3xl border border-border/80 bg-card shadow-sm hover:shadow-soft transition-all space-y-4"
+                    >
+                      {/* Top bar: Reviewer, Rating, Status badge */}
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="h-10 w-10 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-sm shrink-0">
+                            {review.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-semibold text-foreground text-sm">{review.name}</h3>
+                              {review.verified_buyer && (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Verified Customer
+                                </span>
+                              )}
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-secondary text-foreground/80">
+                                {review.occasion}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                              <a
+                                href={`mailto:${review.email}?subject=Thank you for your Redycakes review`}
+                                className="hover:text-primary transition-colors underline-offset-4 hover:underline"
+                              >
+                                {review.email}
+                              </a>
+                              {review.location && <span>· {review.location}</span>}
+                              <span>· {createdDate}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Rating & Status */}
+                        <div className="flex sm:flex-col items-end gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1 text-amber-400">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`h-4 w-4 ${
+                                  i < review.rating
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "fill-transparent text-muted-foreground/30"
+                                }`}
+                              />
+                            ))}
+                            <span className="text-xs font-bold text-foreground ml-1">
+                              ({review.rating}/5)
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {review.status === "pending" && (
+                              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                Pending Approval
+                              </span>
+                            )}
+                            {review.status === "approved" && (
+                              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                Approved & Live
+                              </span>
+                            )}
+                            {review.status === "featured" && (
+                              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                                ★ Featured Story
+                              </span>
+                            )}
+                            {review.status === "archived" && (
+                              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30">
+                                Archived
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cake Flavour / Style Tag */}
+                      {review.flavour && (
+                        <div className="text-xs font-semibold text-primary">
+                          🍰 <span className="text-foreground/90 font-normal">Flavour/Style:</span> {review.flavour}
+                        </div>
+                      )}
+
+                      {/* Written Review Text */}
+                      <blockquote className="p-3.5 rounded-2xl bg-secondary/30 border border-border/60 text-sm text-foreground leading-relaxed italic relative">
+                        “{review.review_text}”
+                      </blockquote>
+
+                      {/* Would recommend tag */}
+                      <div className="flex items-center gap-1.5 text-xs">
+                        {review.recommend ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                            <ThumbsUp className="h-3.5 w-3.5" />
+                            Would recommend Redycakes
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Did not recommend
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Official Studio Public Reply Box */}
+                      {review.admin_reply ? (
+                        <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-primary flex items-center gap-1">
+                              <Sparkles className="h-3.5 w-3.5" />
+                              Official Studio Public Response:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenStudioReply(review)}
+                              className="text-[11px] text-primary hover:underline font-semibold"
+                            >
+                              Edit Response
+                            </button>
+                          </div>
+                          <p className="text-foreground/90 italic leading-relaxed">
+                            "{review.admin_reply}"
+                          </p>
+                          {review.admin_replied_at && (
+                            <p className="text-[10px] text-muted-foreground">
+                              Replied on {new Date(review.admin_replied_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {/* Moderation Actions Toolbar */}
+                      <div className="pt-3 border-t border-border/60 flex flex-wrap items-center justify-between gap-3">
+                        {/* Status Change Buttons */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {review.status !== "approved" && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateReviewStatus(review.id, "approved")}
+                              className="btn btn-secondary !py-1.5 !px-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
+                            >
+                              ✓ Approve
+                            </button>
+                          )}
+                          {review.status !== "featured" && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateReviewStatus(review.id, "featured")}
+                              className="btn btn-secondary !py-1.5 !px-3 text-xs font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-500/10"
+                            >
+                              ★ Feature
+                            </button>
+                          )}
+                          {review.status !== "pending" && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateReviewStatus(review.id, "pending")}
+                              className="btn btn-secondary !py-1.5 !px-3 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                            >
+                              Mark Pending
+                            </button>
+                          )}
+                          {review.status !== "archived" && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateReviewStatus(review.id, "archived")}
+                              className="btn btn-secondary !py-1.5 !px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-500/10"
+                            >
+                              Archive
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Reply, Delete, Email Actions */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenStudioReply(review)}
+                            className="btn btn-secondary !py-1.5 !px-3 text-xs font-semibold flex items-center gap-1 text-primary hover:bg-primary/10"
+                          >
+                            <MessageSquareHeart className="h-3.5 w-3.5" />
+                            <span>{review.admin_reply ? "Edit Reply" : "Studio Reply"}</span>
+                          </button>
+                          <a
+                            href={`mailto:${review.email}?subject=Regarding your Redycakes experience`}
+                            className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+                            title="Send direct email to customer"
+                          >
+                            <Mail className="h-4 w-4" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteReview(review.id)}
+                            className="p-1.5 rounded-lg border border-border text-rose-500 hover:bg-rose-500/10 transition-colors"
+                            title="Delete review"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Studio Reply Modal Dialog */}
+            {replyingReview && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="relative w-full max-w-lg rounded-3xl border border-border/80 bg-card p-6 shadow-soft space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-border/70">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                        <Sparkles className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-display font-semibold text-foreground text-base">
+                          Studio Response to {replyingReview.name}
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          This public reply will be displayed beneath their review on the storefront.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingReview(null)}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Customer Review Snapshot */}
+                  <div className="p-3 rounded-2xl bg-secondary/30 border border-border/60 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground">{replyingReview.name} ({replyingReview.occasion})</span>
+                      <span className="text-amber-500 font-bold">{"★".repeat(replyingReview.rating)}</span>
+                    </div>
+                    <p className="text-muted-foreground italic line-clamp-2">
+                      "{replyingReview.review_text}"
+                    </p>
+                  </div>
+
+                  {/* Reply Input */}
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                      Your Official Studio Response
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={studioReplyInput}
+                      onChange={(e) => setStudioReplyInput(e.target.value)}
+                      placeholder="e.g. Thank you so much Sarah & Tom! It was an absolute honour designing your wedding cake..."
+                      className="w-full rounded-xl border border-border bg-background p-3 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border/70">
+                    <button
+                      type="button"
+                      onClick={() => setReplyingReview(null)}
+                      disabled={isSavingStudioReply}
+                      className="btn btn-secondary !py-2 !px-4 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveStudioReply}
+                      disabled={isSavingStudioReply || !studioReplyInput.trim()}
+                      className="btn btn-primary !py-2 !px-5 text-xs font-semibold flex items-center gap-1.5 shadow-soft disabled:opacity-50"
+                    >
+                      {isSavingStudioReply ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Publishing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-3.5 w-3.5" />
+                          <span>Publish Response</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Admin Test / Direct Review Submission Modal */}
+            <ReviewModal
+              isOpen={showAdminReviewModal}
+              onClose={() => setShowAdminReviewModal(false)}
+              onSuccess={() => {
+                refreshData();
+                setShowAdminReviewModal(false);
+              }}
+            />
           </div>
         )}
 

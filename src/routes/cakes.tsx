@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { CtaBand, PageHero, seo } from "@/components/SiteLayout";
 import { useSiteContent } from "@/lib/siteContent";
+import { ReviewsShowcase } from "@/components/ReviewsShowcase";
 
 export const Route = createFileRoute("/cakes")({
   head: () => seo("Cake Gallery — Redycakes", "Browse wedding, birthday, corporate and celebration cakes — each with the brief and how we solved it."),
@@ -43,6 +44,7 @@ function Cakes() {
         ))}
         {items.length === 0 && <p className="text-muted-foreground">No cakes match that combination yet — but we'd love to make the first one.</p>}
       </section>
+      <ReviewsShowcase className="mt-20" defaultOccasion={occ !== "All" ? (occ as any) : undefined} />
       <CtaBand title="Have a picture in your head?" />
     </>
   );

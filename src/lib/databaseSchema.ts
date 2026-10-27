@@ -180,6 +180,28 @@ GRANT ALL ON public.chat_conversations TO anon, authenticated, service_role;
 ALTER TABLE public.chat_conversations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public chat_conversations policy" ON public.chat_conversations;
 CREATE POLICY "Public chat_conversations policy" ON public.chat_conversations FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- 12. Customer Ratings & Reviews Table (Strictly text-only, no images)
+CREATE TABLE IF NOT EXISTS public.customer_reviews (
+  id text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  name text NOT NULL,
+  email text NOT NULL,
+  location text,
+  rating integer NOT NULL DEFAULT 5,
+  occasion text NOT NULL DEFAULT 'Celebration',
+  flavour text,
+  review_text text NOT NULL,
+  recommend boolean NOT NULL DEFAULT true,
+  status text NOT NULL DEFAULT 'approved',
+  admin_reply text,
+  admin_replied_at timestamptz,
+  verified_buyer boolean NOT NULL DEFAULT true
+);
+GRANT ALL ON public.customer_reviews TO anon, authenticated, service_role;
+ALTER TABLE public.customer_reviews ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public customer_reviews policy" ON public.customer_reviews;
+CREATE POLICY "Public customer_reviews policy" ON public.customer_reviews FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
 
 export const COMPLETE_DATABASE_SCHEMA_SQL = COMPLETE_SUPABASE_SQL;

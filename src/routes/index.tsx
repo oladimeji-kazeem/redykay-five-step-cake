@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CtaBand, seo } from "@/components/SiteLayout";
 import { images } from "@/lib/site";
 import { useSiteContent } from "@/lib/siteContent";
+import { ReviewsShowcase } from "@/components/ReviewsShowcase";
 
 export const Route = createFileRoute("/")({
   head: () => seo(
@@ -65,23 +66,7 @@ function Home() {
         </div>
       </section>
 
-      <section className="mt-24 border-y border-border/70 bg-gradient-to-b from-secondary/40 via-accent/30 to-background py-20">
-        <div className="container-page">
-          <div className="text-center">
-            <p className="eyebrow">The taste test</p>
-            <h2 className="mt-2 text-3xl font-semibold md:text-4xl">Words from happy celebrations</h2>
-          </div>
-          <div className="mt-12 grid gap-8 md:grid-cols-3">
-            {content.quotes.map((q) => (
-              <blockquote key={q.who} className="relative rounded-2xl border border-border/80 bg-card p-8 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-soft">
-                <span className="font-display text-5xl leading-none text-primary/20 select-none absolute top-4 right-5">“</span>
-                <p className="font-display text-xl leading-relaxed text-foreground relative z-10">“{q.q}”</p>
-                <footer className="mt-5 text-sm font-semibold text-primary">— {q.who}</footer>
-              </blockquote>
-            ))}
-          </div>
-        </div>
-      </section>
+      <ReviewsShowcase className="mt-24" />
 
       <CtaBand />
     </>
