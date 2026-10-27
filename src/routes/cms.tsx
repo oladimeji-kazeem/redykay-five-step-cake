@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import {
   LayoutDashboard,
@@ -38,6 +38,8 @@ import {
   Wallet,
   EyeOff,
   CheckCircle2,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -70,6 +72,7 @@ import {
   getAnalyticsData,
   type AnalyticsSummary,
 } from "@/lib/analytics";
+import { supabase } from "@/integrations/supabase/client";
 import {
   fetchOrders,
   fetchContactMessages,
@@ -162,6 +165,94 @@ function CmsPage() {
     brief: "",
     solution: "",
   });
+  const cakeFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isProcessingCakeImage, setIsProcessingCakeImage] = useState(false);
+
+  const handleCakeImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select a valid image file (JPG, PNG, WebP).");
+      return;
+    }
+
+    setIsProcessingCakeImage(true);
+    const toastId = toast.loading("Processing image from device...");
+
+    try {
+      let uploadedUrl: string | null = null;
+
+      // 1. Attempt upload to Supabase Storage if configured
+      try {
+        const cleanName = `cake_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from("cakes")
+          .upload(cleanName, file, { upsert: true });
+
+        if (!uploadErr && uploadData) {
+          const { data: publicUrlData } = supabase.storage.from("cakes").getPublicUrl(cleanName);
+          if (publicUrlData?.publicUrl) {
+            uploadedUrl = publicUrlData.publicUrl;
+          }
+        }
+      } catch (storageErr) {
+        console.debug("Supabase storage upload note:", storageErr);
+      }
+
+      // 2. Client-side compression fallback to Data URL (max 1200px, 0.85 quality)
+      if (!uploadedUrl) {
+        uploadedUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement("canvas");
+              const maxDim = 1200;
+              let width = img.width;
+              let height = img.height;
+
+              if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                  height = Math.round((height * maxDim) / width);
+                  width = maxDim;
+                } else {
+                  width = Math.round((width * maxDim) / height);
+                  height = maxDim;
+                }
+              }
+
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) {
+                resolve(event.target?.result as string);
+                return;
+              }
+              ctx.drawImage(img, 0, 0, width, height);
+              const compressedUrl = canvas.toDataURL("image/jpeg", 0.85);
+              resolve(compressedUrl);
+            };
+            img.onerror = () => resolve(event.target?.result as string);
+            img.src = event.target?.result as string;
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      setCakeForm((prev) => ({ ...prev, src: uploadedUrl! }));
+      toast.success("Image selected from device!", { id: toastId });
+    } catch (err: any) {
+      console.error("Failed to read image file", err);
+      toast.error("Failed to process image file. Please try another.", { id: toastId });
+    } finally {
+      setIsProcessingCakeImage(false);
+      if (cakeFileInputRef.current) {
+        cakeFileInputRef.current.value = "";
+      }
+    }
+  };
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState("admin@redycakes.co.uk");
@@ -256,12 +347,18 @@ function CmsPage() {
       toast.error("You have view-only access. Privilege upgrade required to edit content.");
       return;
     }
-    const success = await updateContent(draftContent);
-    if (success) {
+    const result = await updateContent(draftContent);
+    if (result && result.success) {
       setHasUnsavedChanges(false);
-      toast.success("Site content published successfully!", {
-        description: "Your changes are now live across all pages.",
-      });
+      if (result.cloudSynced) {
+        toast.success("Site content published successfully!", {
+          description: "Your changes are now live across all storefront pages and saved in cloud database.",
+        });
+      } else {
+        toast.success("Site content published to storefront!", {
+          description: "Changes are live on the site. (Cloud DB note: " + (result.error || "local mode") + ")",
+        });
+      }
     } else {
       toast.error("Failed to save changes. Please try again.");
     }
@@ -3545,15 +3642,100 @@ function CmsPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Image URL</label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-muted-foreground">Image URL / Product Photo</label>
+                  <span className="text-[11px] text-muted-foreground">URL or upload from device</span>
+                </div>
+
+                {/* Hidden File Picker Input */}
                 <input
-                  type="text"
-                  value={cakeForm.src}
-                  onChange={(e) => setCakeForm((f) => ({ ...f, src: e.target.value }))}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-                  placeholder="e.g. /cakes/cake-sample-1.jpg"
+                  ref={cakeFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCakeImageUpload}
+                  className="hidden"
                 />
+
+                {/* Input with Pick from Device button */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={cakeForm.src}
+                    onChange={(e) => setCakeForm((f) => ({ ...f, src: e.target.value }))}
+                    className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                    placeholder="e.g. /cakes/cake-sample-1.jpg or click button →"
+                  />
+                  <button
+                    type="button"
+                    disabled={isProcessingCakeImage}
+                    onClick={() => cakeFileInputRef.current?.click()}
+                    className="btn btn-outline shrink-0 flex items-center gap-1.5 text-xs !py-2 !px-3 font-semibold hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+                  >
+                    {isProcessingCakeImage ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3.5 w-3.5 text-primary" />
+                        Pick from Device
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Live Image Preview & Quick Actions */}
+                {cakeForm.src ? (
+                  <div className="p-2.5 rounded-xl border border-border/80 bg-accent/20 flex items-center gap-3">
+                    <img
+                      src={cakeForm.src}
+                      alt="Cake preview"
+                      className="h-14 w-14 rounded-lg object-cover border border-border shrink-0 bg-background"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "/redycakes_logo.png";
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-foreground truncate">
+                        {cakeForm.src.startsWith("data:")
+                          ? "Custom photo uploaded from device"
+                          : cakeForm.src.startsWith("http")
+                          ? "Remote image URL"
+                          : "Cake gallery asset"}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => cakeFileInputRef.current?.click()}
+                          className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+                        >
+                          <Upload className="h-3 w-3" /> Change image
+                        </button>
+                        <span className="text-muted-foreground/40">•</span>
+                        <button
+                          type="button"
+                          onClick={() => setCakeForm((f) => ({ ...f, src: "" }))}
+                          className="text-[11px] font-medium text-destructive hover:underline"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => cakeFileInputRef.current?.click()}
+                    className="cursor-pointer border border-dashed border-border/80 hover:border-primary/50 hover:bg-primary/5 transition-colors rounded-xl p-2.5 text-center"
+                  >
+                    <p className="text-xs font-medium text-foreground flex items-center justify-center gap-1.5">
+                      <Upload className="h-3.5 w-3.5 text-primary" />
+                      Click here to pick an image from your device
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">JPG, PNG, WebP supported</p>
+                  </div>
+                )}
               </div>
 
               <div>

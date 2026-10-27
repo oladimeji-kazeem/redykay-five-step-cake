@@ -232,8 +232,14 @@ export async function fetchContentFromSupabase(): Promise<SiteContent | null> {
   return null;
 }
 
-export async function persistContentToSupabase(content: SiteContent): Promise<boolean> {
-  // Always update local cache immediately so edits are instantly visible
+export interface ContentSaveResult {
+  success: boolean;
+  cloudSynced: boolean;
+  error?: string;
+}
+
+export async function persistContentToSupabase(content: SiteContent): Promise<ContentSaveResult> {
+  // Always update local cache immediately so edits are instantly visible on storefront
   saveCachedContent(content);
 
   try {
@@ -246,12 +252,14 @@ export async function persistContentToSupabase(content: SiteContent): Promise<bo
       });
 
     if (error) {
-      console.debug("[SiteContent] Supabase upsert note:", error.message);
-      return false;
+      console.warn("[SiteContent] Supabase upsert note:", error.message);
+      return { success: true, cloudSynced: false, error: error.message };
     }
-    return true;
-  } catch {
-    return false;
+
+    return { success: true, cloudSynced: true };
+  } catch (err: any) {
+    console.warn("[SiteContent] Cloud persistence error:", err);
+    return { success: true, cloudSynced: false, error: err?.message };
   }
 }
 
@@ -278,13 +286,13 @@ export function useSiteContent() {
     return () => window.removeEventListener(CONTENT_UPDATE_EVENT, handler);
   }, []);
 
-  const updateContent = useCallback(async (newContent: SiteContent | ((prev: SiteContent) => SiteContent)) => {
+  const updateContent = useCallback(async (newContent: SiteContent | ((prev: SiteContent) => SiteContent)): Promise<ContentSaveResult> => {
     setIsSaving(true);
     const resolved = typeof newContent === "function" ? newContent(content) : newContent;
     setContent(resolved);
-    const synced = await persistContentToSupabase(resolved);
+    const result = await persistContentToSupabase(resolved);
     setIsSaving(false);
-    return synced;
+    return result;
   }, [content]);
 
   const resetDefaults = useCallback(async () => {

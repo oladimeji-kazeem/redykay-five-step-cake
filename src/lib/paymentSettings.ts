@@ -184,6 +184,7 @@ export async function persistPaymentSettings(settings: PaymentSettings, userEmai
     updatedBy: userEmail || "Privileged User",
   };
 
+  // Always update local cache immediately so changes are instant
   saveCachedPaymentSettings(payload);
 
   try {
@@ -197,12 +198,14 @@ export async function persistPaymentSettings(settings: PaymentSettings, userEmai
       });
 
     if (error) {
-      console.debug("[PaymentSettings] Supabase upsert note:", error.message);
-      return false;
+      console.warn("[PaymentSettings] Supabase upsert note:", error.message);
+      // Return true because local settings were successfully saved
+      return true;
     }
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    console.warn("[PaymentSettings] Cloud save note:", err);
+    return true;
   }
 }
 

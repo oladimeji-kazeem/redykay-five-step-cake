@@ -10,7 +10,7 @@ export const DEFAULT_SUPABASE_URL = 'https://coblvntmcbnyardnsrcs.supabase.co';
 export const DEFAULT_SUPABASE_KEY = 'sb_publishable_d4k0H3i6T0UGSKQsJHZyxQ_THoAl6fN';
 
 function createSupabaseFetch(supabaseUrl: string, supabaseKey: string): typeof fetch {
-  return (input, init) => {
+  return async (input, init) => {
     const headers = new Headers(
       typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined,
     );
@@ -25,7 +25,24 @@ function createSupabaseFetch(supabaseUrl: string, supabaseKey: string): typeof f
     }
 
     headers.set('apikey', supabaseKey);
-    return fetch(input, { ...init, headers });
+    const response = await fetch(input, { ...init, headers });
+
+    // If request failed with 401 (JWT expired or invalid session token), retry without stale token
+    if (response.status === 401 && headers.has('Authorization')) {
+      const retryHeaders = new Headers(headers);
+      retryHeaders.delete('Authorization');
+      retryHeaders.set('apikey', supabaseKey);
+      try {
+        const retryRes = await fetch(input, { ...init, headers: retryHeaders });
+        if (retryRes.ok) {
+          return retryRes;
+        }
+      } catch (err) {
+        console.debug('[Supabase] Auth recovery retry note:', err);
+      }
+    }
+
+    return response;
   };
 }
 
