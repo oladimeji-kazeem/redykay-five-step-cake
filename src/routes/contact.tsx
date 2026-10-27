@@ -5,6 +5,7 @@ import { PageHero, seo } from "@/components/SiteLayout";
 import { useSiteContent } from "@/lib/siteContent";
 import { saveContactMessage } from "@/lib/databaseSchema";
 import { trackEvent } from "@/lib/analytics";
+import { sendEmailViaHostingerSmtp } from "@/lib/emailService";
 
 export const Route = createFileRoute("/contact")({
   head: () => seo("Contact — Redycakes", "Message us, chat on WhatsApp or email. We reply within 24 hours, Monday to Saturday."),
@@ -35,6 +36,17 @@ function Contact() {
         email: parsed.data.email,
         message: parsed.data.message,
       });
+
+      // Dispatch via Hostinger SMTP (smtp.hostinger.com:465) copying sender
+      sendEmailViaHostingerSmtp({
+        to: "hello@redycakes.org",
+        cc: parsed.data.email,
+        subject: `[Contact Form] New Inquiry from ${parsed.data.name}`,
+        message: parsed.data.message,
+        visitorName: parsed.data.name,
+        visitorEmail: parsed.data.email,
+      }).catch((e) => console.debug("[Contact Email] SMTP notice:", e));
+
       trackEvent("contact_submitted", { email: parsed.data.email });
       setStatus("sent");
     } catch (error) {

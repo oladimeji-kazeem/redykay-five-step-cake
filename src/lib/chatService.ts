@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { sendEmailViaHostingerSmtp } from "@/lib/emailService";
 
 export interface ChatMessage {
   id: string;
@@ -200,6 +201,7 @@ export async function fetchChatConversation(conversationId: string): Promise<Cha
 
 /**
  * Dispatch email notification to hello@redycakes.org, copying the sender
+ * Transmitted via Hostinger SMTP (smtp.hostinger.com:465)
  */
 export async function sendChatEmailNotification(params: {
   visitorName: string;
@@ -216,37 +218,23 @@ export async function sendChatEmailNotification(params: {
     : `[Redycakes Cake Studio] Response to your live chat — ${params.visitorName}`;
 
   try {
-    // Dispatch using FormSubmit AJAX API
-    // Copies the visitor's email and sends to hello@redycakes.org
-    const payload = {
-      _subject: subject,
-      _cc: params.visitorEmail,
-      _replyto: isVisitor ? params.visitorEmail : REDYCAKES_CONTACT_EMAIL,
-      sender: isVisitor ? params.visitorName : (params.senderName || "Redycakes Cake Studio Admin"),
-      visitor_name: params.visitorName,
-      visitor_email: params.visitorEmail,
-      visitor_phone: params.visitorPhone,
-      chat_message: params.messageText,
-      conversation_id: params.conversationId,
-      timestamp: new Date().toLocaleString("en-GB", { timeZone: "Europe/London" }),
-      portal_link: "https://www.redycakes.org/cms",
-    };
-
-    const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(REDYCAKES_CONTACT_EMAIL)}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(payload),
+    // Primary: Relay via Hostinger SMTP (smtp.hostinger.com:465)
+    const result = await sendEmailViaHostingerSmtp({
+      to: REDYCAKES_CONTACT_EMAIL,
+      cc: params.visitorEmail, // Copies the sender
+      replyTo: isVisitor ? params.visitorEmail : REDYCAKES_CONTACT_EMAIL,
+      subject,
+      message: params.messageText,
+      visitorName: params.visitorName,
+      visitorEmail: params.visitorEmail,
+      visitorPhone: params.visitorPhone,
     });
 
-    if (res.ok) {
+    if (result.success) {
       return true;
     }
-    console.debug("[Chat Email] FormSubmit status:", res.status);
   } catch (err) {
-    console.debug("[Chat Email] Dispatch notice:", err);
+    console.debug("[Chat Email] Hostinger SMTP notice:", err);
   }
 
   // Graceful fallback: return true so the user's chat flow is never blocked
