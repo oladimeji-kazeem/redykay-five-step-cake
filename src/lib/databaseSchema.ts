@@ -160,6 +160,26 @@ DROP POLICY IF EXISTS "Anyone can insert payment_transactions" ON public.payment
 CREATE POLICY "Anyone can insert payment_transactions" ON public.payment_transactions FOR INSERT TO anon, authenticated WITH CHECK (true);
 DROP POLICY IF EXISTS "Anyone can read payment_transactions" ON public.payment_transactions;
 CREATE POLICY "Anyone can read payment_transactions" ON public.payment_transactions FOR SELECT TO anon, authenticated USING (true);
+
+-- 11. Live Chat Conversations & Transcripts Table
+CREATE TABLE IF NOT EXISTS public.chat_conversations (
+  id text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  visitor_name text NOT NULL,
+  visitor_email text NOT NULL,
+  visitor_phone text NOT NULL,
+  last_message text NOT NULL DEFAULT '',
+  last_message_at timestamptz NOT NULL DEFAULT now(),
+  status text NOT NULL DEFAULT 'active',
+  unread_admin boolean NOT NULL DEFAULT true,
+  unread_visitor boolean NOT NULL DEFAULT false,
+  messages jsonb NOT NULL DEFAULT '[]'::jsonb
+);
+GRANT ALL ON public.chat_conversations TO anon, authenticated, service_role;
+ALTER TABLE public.chat_conversations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public chat_conversations policy" ON public.chat_conversations;
+CREATE POLICY "Public chat_conversations policy" ON public.chat_conversations FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
 
 export const COMPLETE_DATABASE_SCHEMA_SQL = COMPLETE_SUPABASE_SQL;

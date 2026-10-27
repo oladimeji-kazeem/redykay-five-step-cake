@@ -12,6 +12,7 @@ import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { Header, Footer } from "@/components/SiteLayout";
+import { LiveChatWidget } from "@/components/LiveChatWidget";
 import { AnalyticsTracker } from "@/lib/analytics";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -155,6 +156,7 @@ function RootComponent() {
         <Outlet />
       </main>
       {!isCms && <Footer />}
+      {!isCms && <LiveChatWidget />}
     </QueryClientProvider>
   );
 }

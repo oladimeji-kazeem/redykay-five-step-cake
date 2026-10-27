@@ -40,6 +40,11 @@ import {
   CheckCircle2,
   Upload,
   Loader2,
+  MessageCircle,
+  Send,
+  CheckCheck,
+  RotateCw,
+  Inbox,
 } from "lucide-react";
 import {
   AreaChart,
@@ -94,13 +99,24 @@ import {
   type PaymentEnvironment,
   type PaymentCurrency,
 } from "@/lib/paymentSettings";
+import {
+  fetchChatConversations,
+  sendChatMessage,
+  updateConversationStatus,
+  deleteChatConversation,
+  markConversationRead,
+  createChatMailtoLink,
+  REDYCAKES_CONTACT_EMAIL,
+  type ChatConversation,
+  type ChatMessage,
+} from "@/lib/chatService";
 
 export const Route = createFileRoute("/cms")({
   head: () => seo("CMS Admin Studio — Redycakes", "Manage site content, orders, inquiries, web analytics and team access."),
   component: CmsPage,
 });
 
-type TabType = "overview" | "analytics" | "content" | "orders" | "messages" | "users" | "payments" | "database";
+type TabType = "overview" | "analytics" | "content" | "orders" | "messages" | "chats" | "users" | "payments" | "database";
 type ContentSection = "hero" | "cakes" | "trust" | "dietary" | "tasting" | "howItWorks" | "faq" | "about" | "contact";
 
 function CmsPage() {
@@ -145,6 +161,42 @@ function CmsPage() {
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>("all");
   const [messageSearch, setMessageSearch] = useState("");
   const [messageStatusFilter, setMessageStatusFilter] = useState<string>("all");
+
+  // Live Visitor Chats state
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [chatSearch, setChatSearch] = useState("");
+  const [chatFilter, setChatFilter] = useState<"all" | "active" | "resolved">("all");
+  const [adminReplyText, setAdminReplyText] = useState("");
+  const [isSendingChatReply, setIsSendingChatReply] = useState(false);
+  const adminChatEndRef = useRef<HTMLDivElement>(null);
+
+  const activeChat = useMemo(
+    () => conversations.find((c) => c.id === selectedChatId) || null,
+    [conversations, selectedChatId]
+  );
+
+  const unreadChatsCount = useMemo(
+    () => conversations.filter((c) => c.unreadAdmin).length,
+    [conversations]
+  );
+  const activeChatsCount = useMemo(
+    () => conversations.filter((c) => c.status === "active").length,
+    [conversations]
+  );
+
+  const filteredConversations = useMemo(() => {
+    return conversations.filter((c) => {
+      const matchSearch =
+        c.visitorName.toLowerCase().includes(chatSearch.toLowerCase()) ||
+        c.visitorEmail.toLowerCase().includes(chatSearch.toLowerCase()) ||
+        c.visitorPhone.toLowerCase().includes(chatSearch.toLowerCase()) ||
+        c.lastMessage.toLowerCase().includes(chatSearch.toLowerCase());
+      const matchFilter =
+        chatFilter === "all" ? true : c.status === chatFilter;
+      return matchSearch && matchFilter;
+    });
+  }, [conversations, chatSearch, chatFilter]);
 
   // User management modals
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -286,7 +338,46 @@ function CmsPage() {
     fetchOrders().then(setOrders).catch(console.error);
     fetchContactMessages().then(setMessages).catch(console.error);
     fetchPaymentTransactions().then(setPaymentTransactions).catch(console.error);
+    fetchChatConversations().then((list) => {
+      setConversations(list);
+      if (list.length > 0 && !selectedChatId) {
+        setSelectedChatId(list[0].id);
+      }
+    }).catch(console.error);
   }, [currentUser, analyticsDays]);
+
+  // Periodic poll & cross-tab sync for chats
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => {
+      fetchChatConversations().then((updatedList) => {
+        setConversations(updatedList);
+      }).catch(console.debug);
+    }, 4000);
+
+    const handleChatBroadcast = () => {
+      fetchChatConversations().then(setConversations).catch(console.debug);
+    };
+    window.addEventListener("redycakes_chat_event", handleChatBroadcast);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("redycakes_chat_event", handleChatBroadcast);
+    };
+  }, [currentUser]);
+
+  // Auto scroll to bottom of active chat & mark read by admin
+  useEffect(() => {
+    if (selectedChatId) {
+      markConversationRead(selectedChatId, "admin");
+      setConversations((prev) =>
+        prev.map((c) => (c.id === selectedChatId ? { ...c, unreadAdmin: false } : c))
+      );
+      setTimeout(() => {
+        adminChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+  }, [selectedChatId, activeChat?.messages?.length]);
 
   // Refresh helper
   const refreshData = () => {
@@ -294,6 +385,68 @@ function CmsPage() {
     fetchOrders().then(setOrders);
     fetchContactMessages().then(setMessages);
     fetchPaymentTransactions().then(setPaymentTransactions);
+    fetchChatConversations().then(setConversations);
+  };
+
+  // Chat action handlers
+  const handleSendAdminReply = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!adminReplyText.trim() || !activeChat || isSendingChatReply) return;
+
+    const textToSend = adminReplyText.trim();
+    setAdminReplyText("");
+    setIsSendingChatReply(true);
+
+    try {
+      const newMsg = await sendChatMessage({
+        conversationId: activeChat.id,
+        sender: "admin",
+        senderName: currentUser?.name || "Redycakes Admin",
+        text: textToSend,
+      });
+
+      if (newMsg) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeChat.id
+              ? {
+                  ...c,
+                  lastMessage: textToSend,
+                  lastMessageAt: newMsg.createdAt,
+                  messages: [...c.messages, newMsg],
+                  unreadVisitor: true,
+                }
+              : c
+          )
+        );
+        toast.success("Reply sent & emailed!", {
+          description: `Delivered to live chat and transcript emailed to ${activeChat.visitorEmail} & ${REDYCAKES_CONTACT_EMAIL}`,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to send admin reply", err);
+      toast.error("Failed to send reply. Please try again.");
+    } finally {
+      setIsSendingChatReply(false);
+    }
+  };
+
+  const handleToggleChatStatus = async (id: string, newStatus: "active" | "resolved") => {
+    await updateConversationStatus(id, newStatus);
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c))
+    );
+    toast.success(`Chat marked as ${newStatus}`);
+  };
+
+  const handleDeleteChat = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this chat conversation?")) return;
+    await deleteChatConversation(id);
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (selectedChatId === id) {
+      setSelectedChatId(null);
+    }
+    toast.info("Conversation deleted.");
   };
 
   // Payment draft updater
@@ -659,6 +812,29 @@ function CmsPage() {
             </button>
 
             <button
+              onClick={() => setActiveTab("chats")}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "chats"
+                  ? "bg-primary text-primary-foreground shadow-soft"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageCircle className="h-4 w-4" />
+                <span>Visitor Chats</span>
+              </div>
+              {unreadChatsCount > 0 ? (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-rose-500 text-white font-bold animate-pulse">
+                  {unreadChatsCount}
+                </span>
+              ) : activeChatsCount > 0 ? (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-bold">
+                  {activeChatsCount}
+                </span>
+              ) : null}
+            </button>
+
+            <button
               onClick={() => setActiveTab("users")}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === "users"
@@ -861,6 +1037,24 @@ function CmsPage() {
                       <p className="text-xs text-muted-foreground">Update headline, badge, and copy</p>
                     </div>
                     <FileText className="h-4 w-4 text-primary" />
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab("chats")}
+                    className="w-full text-left p-3 rounded-xl border border-border/60 hover:border-primary/50 hover:bg-primary/5 transition flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold">Live Visitor Chats</p>
+                        {unreadChatsCount > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500 text-white font-bold animate-pulse">
+                            {unreadChatsCount} new
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Review chats & reply directly to visitors</p>
+                    </div>
+                    <MessageCircle className="h-4 w-4 text-primary" />
                   </button>
 
                   <button
@@ -2135,6 +2329,385 @@ function CmsPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VISITOR LIVE CHATS TAB */}
+        {activeTab === "chats" && (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold">Visitor Live Chats</h1>
+                  {unreadChatsCount > 0 && (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500 text-white font-bold animate-pulse">
+                      {unreadChatsCount} unread
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Real-time conversations from storefront visitors. Every chat is stored in the database and automatically dispatched to{" "}
+                  <strong className="text-foreground">{REDYCAKES_CONTACT_EMAIL}</strong> copying the sender.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={refreshData}
+                  className="btn btn-outline !py-2 !px-3 text-xs font-semibold flex items-center gap-1.5"
+                  title="Refresh chats"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Main Chat Split Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Left Column: Conversations List (5 cols) */}
+              <div className="lg:col-span-5 rounded-3xl border border-border/80 bg-card shadow-soft p-4 space-y-4">
+                {/* Search & Status Filters */}
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Search by name, email, phone..."
+                      value={chatSearch}
+                      onChange={(e) => setChatSearch(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+
+                  <div className="flex gap-1.5 p-1 rounded-xl bg-accent/40 text-xs">
+                    {(["all", "active", "resolved"] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setChatFilter(filter)}
+                        className={`flex-1 py-1.5 rounded-lg font-semibold capitalize transition-colors text-xs ${
+                          chatFilter === filter
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {filter} {filter === "active" && activeChatsCount > 0 ? `(${activeChatsCount})` : ""}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Conversation List Items */}
+                <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
+                  {filteredConversations.map((conv) => {
+                    const isSelected = selectedChatId === conv.id;
+                    return (
+                      <div
+                        key={conv.id}
+                        onClick={() => setSelectedChatId(conv.id)}
+                        className={`cursor-pointer rounded-2xl border p-3.5 transition-all text-left space-y-2 ${
+                          isSelected
+                            ? "border-primary bg-primary/10 shadow-soft"
+                            : "border-border/70 hover:border-border hover:bg-accent/30"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="h-9 w-9 rounded-full bg-primary/20 text-primary font-bold text-xs flex items-center justify-center shrink-0">
+                              {conv.visitorName.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-xs font-bold truncate text-foreground">
+                                  {conv.visitorName}
+                                </p>
+                                {conv.unreadAdmin && (
+                                  <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                                )}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground truncate">{conv.visitorEmail}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end shrink-0 gap-1">
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                                conv.status === "active"
+                                  ? "bg-emerald-500/15 text-emerald-600"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {conv.status}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(conv.lastMessageAt).toLocaleDateString([], {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Last Message Snippet */}
+                        <p
+                          className={`text-xs line-clamp-2 leading-relaxed ${
+                            conv.unreadAdmin ? "font-semibold text-foreground" : "text-muted-foreground"
+                          }`}
+                        >
+                          {conv.lastMessage || "No messages yet"}
+                        </p>
+
+                        {/* Phone & message count footer */}
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground/80 pt-1 border-t border-border/40">
+                          <span className="flex items-center gap-1">
+                            <Phone className="h-3 w-3" />
+                            {conv.visitorPhone || "No phone"}
+                          </span>
+                          <span>{conv.messages?.length || 0} msgs</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {filteredConversations.length === 0 && (
+                    <div className="p-8 text-center text-muted-foreground space-y-2">
+                      <MessageCircle className="h-8 w-8 mx-auto opacity-30" />
+                      <p className="text-xs font-semibold">No visitor chats found</p>
+                      <p className="text-[11px]">Chats started on the public website will appear here in real-time.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Active Conversation Thread & Reply Box (7 cols) */}
+              <div className="lg:col-span-7 rounded-3xl border border-border/80 bg-card shadow-soft overflow-hidden flex flex-col h-[660px]">
+                {activeChat ? (
+                  <>
+                    {/* Active Chat Header */}
+                    <div className="p-4 bg-gradient-to-r from-accent/40 via-background to-secondary/30 border-b border-border/80 flex items-center justify-between shrink-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-10 w-10 rounded-2xl bg-primary/20 text-primary font-bold text-sm flex items-center justify-center shrink-0">
+                          {activeChat.visitorName.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-display text-sm font-bold truncate text-foreground">
+                              {activeChat.visitorName}
+                            </h3>
+                            <span
+                              className={`text-[10px] px-2 py-0.2 rounded-full font-semibold uppercase ${
+                                activeChat.status === "active"
+                                  ? "bg-emerald-500/15 text-emerald-600"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {activeChat.status}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                            <a
+                              href={`mailto:${activeChat.visitorEmail}`}
+                              className="hover:text-primary flex items-center gap-1 truncate"
+                            >
+                              <Mail className="h-3 w-3" /> {activeChat.visitorEmail}
+                            </a>
+                            {activeChat.visitorPhone && (
+                              <a
+                                href={`https://wa.me/${activeChat.visitorPhone.replace(/[^0-9]/g, "")}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="hover:text-emerald-600 flex items-center gap-1 shrink-0"
+                              >
+                                <Phone className="h-3 w-3" /> {activeChat.visitorPhone}
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Header Actions */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleToggleChatStatus(
+                              activeChat.id,
+                              activeChat.status === "active" ? "resolved" : "active"
+                            )
+                          }
+                          className="btn btn-outline !py-1.5 !px-2.5 text-xs font-semibold"
+                        >
+                          {activeChat.status === "active" ? "Mark Resolved" : "Reopen"}
+                        </button>
+                        <a
+                          href={createChatMailtoLink(activeChat)}
+                          className="p-2 rounded-xl border border-border hover:bg-accent text-foreground"
+                          title="Open transcript in mail client"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteChat(activeChat.id)}
+                          className="p-2 rounded-xl border border-destructive/20 text-destructive hover:bg-destructive/10"
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Email Copy Notice */}
+                    <div className="bg-primary/5 px-4 py-2 border-b border-border/60 text-[11px] text-muted-foreground flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Mail className="h-3.5 w-3.5 text-primary" />
+                        <span>
+                          Transcripts sent to <strong className="text-foreground">{REDYCAKES_CONTACT_EMAIL}</strong> & CC{" "}
+                          <strong className="text-foreground">{activeChat.visitorEmail}</strong>
+                        </span>
+                      </span>
+                      <span className="text-[10px] opacity-75">
+                        Started {new Date(activeChat.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+
+                    {/* Message Transcript Thread */}
+                    <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-card">
+                      {activeChat.messages.map((msg) => {
+                        const isVisitor = msg.sender === "visitor";
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex flex-col ${isVisitor ? "items-start" : "items-end"}`}
+                          >
+                            <div
+                              className={`max-w-[80%] rounded-2xl p-3.5 text-xs shadow-soft space-y-1.5 ${
+                                isVisitor
+                                  ? "rounded-tl-sm bg-accent/40 border border-border/70 text-foreground"
+                                  : "rounded-tr-sm bg-primary text-primary-foreground"
+                              }`}
+                            >
+                              <div
+                                className={`flex items-center justify-between gap-3 text-[10px] font-bold ${
+                                  isVisitor ? "text-primary" : "text-primary-foreground/90"
+                                }`}
+                              >
+                                <span>{msg.senderName}</span>
+                                <span className="opacity-75 font-normal">
+                                  {new Date(msg.createdAt).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                              <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                              <div
+                                className={`text-[9px] flex items-center gap-1 justify-end ${
+                                  isVisitor ? "text-muted-foreground" : "text-primary-foreground/75"
+                                }`}
+                              >
+                                {isVisitor ? (
+                                  <span>Visitor message</span>
+                                ) : (
+                                  <>
+                                    <CheckCheck className="h-3 w-3" />
+                                    <span>Delivered & Emailed</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div ref={adminChatEndRef} />
+                    </div>
+
+                    {/* Canned responses helper chips */}
+                    <div className="px-3 py-1.5 bg-accent/20 border-t border-border/50 flex items-center gap-1.5 overflow-x-auto text-[11px] no-scrollbar shrink-0">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase shrink-0">
+                        Quick reply:
+                      </span>
+                      {[
+                        "Thank you for reaching out! We'd love to help with your cake.",
+                        "What is your event date, venue, and guest count?",
+                        "You can order a sample box directly from redycakes.org/tasting-boxes",
+                        "We can cater to all dietary needs: vegan, gluten-free, nut-free.",
+                      ].map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => setAdminReplyText(chip)}
+                          className="whitespace-nowrap px-2.5 py-1 rounded-lg border border-border/80 bg-card hover:bg-primary/10 hover:border-primary/40 text-foreground text-[10px] transition-colors"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Reply Input Bar */}
+                    <form
+                      onSubmit={handleSendAdminReply}
+                      className="p-3 bg-card border-t border-border/80 space-y-2 shrink-0"
+                    >
+                      <div className="flex gap-2 items-end">
+                        <textarea
+                          rows={2}
+                          value={adminReplyText}
+                          onChange={(e) => setAdminReplyText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendAdminReply();
+                            }
+                          }}
+                          placeholder={`Write a reply to ${activeChat.visitorName}... (Enter to send)`}
+                          className="flex-1 rounded-xl border border-border bg-background p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!adminReplyText.trim() || isSendingChatReply}
+                          className="btn btn-primary !py-2.5 !px-4 text-xs font-semibold flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                        >
+                          {isSendingChatReply ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Sending...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="h-3.5 w-3.5" />
+                              Reply & Email
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>
+                          Press <kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">Enter</kbd> to send,{" "}
+                          <kbd className="px-1 py-0.5 rounded bg-muted text-[10px]">Shift+Enter</kbd> for newline
+                        </span>
+                        <span>✉️ Copies will be sent to {activeChat.visitorEmail} & {REDYCAKES_CONTACT_EMAIL}</span>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center p-8 text-center text-muted-foreground space-y-3">
+                    <div className="h-16 w-16 rounded-3xl bg-primary/10 text-primary flex items-center justify-center">
+                      <MessageCircle className="h-8 w-8" />
+                    </div>
+                    <div>
+                      <h4 className="font-display font-semibold text-foreground text-base">Select a conversation</h4>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                        Choose a chat from the left panel to review previous messages, check visitor details, and send real-time replies.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
