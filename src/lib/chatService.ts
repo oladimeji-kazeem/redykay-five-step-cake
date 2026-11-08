@@ -214,14 +214,22 @@ export async function sendChatEmailNotification(params: {
 }): Promise<boolean> {
   const isVisitor = params.sender === "visitor";
   const subject = isVisitor
-    ? `[Redycakes Live Chat] New message from ${params.visitorName} (${params.visitorPhone})`
+    ? `[Redycakes Live Chat] New message from ${params.visitorName} (${params.visitorPhone || "No phone"})`
     : `[Redycakes Cake Studio] Response to your live chat — ${params.visitorName}`;
+
+  // When visitor sends: TO hello@redycakes.org, CC redycakesinfo@gmail.com & visitor
+  // When admin replies: TO visitor, CC hello@redycakes.org & redycakesinfo@gmail.com
+  const ccList = isVisitor
+    ? ["redycakesinfo@gmail.com", params.visitorEmail].filter(Boolean).join(", ")
+    : ["hello@redycakes.org", "redycakesinfo@gmail.com"].filter(Boolean).join(", ");
+
+  const toEmail = isVisitor ? REDYCAKES_CONTACT_EMAIL : params.visitorEmail || REDYCAKES_CONTACT_EMAIL;
 
   try {
     // Primary: Relay via Hostinger SMTP (smtp.hostinger.com:465)
     const result = await sendEmailViaHostingerSmtp({
-      to: REDYCAKES_CONTACT_EMAIL,
-      cc: params.visitorEmail, // Copies the sender
+      to: toEmail,
+      cc: ccList,
       replyTo: isVisitor ? params.visitorEmail : REDYCAKES_CONTACT_EMAIL,
       subject,
       message: params.messageText,
@@ -561,7 +569,7 @@ export function createChatMailtoLink(conversation: ChatConversation, initialText
   ].join("\n");
 
   return `mailto:${encodeURIComponent(conversation.visitorEmail)}?cc=${encodeURIComponent(
-    REDYCAKES_CONTACT_EMAIL
+    "hello@redycakes.org, redycakesinfo@gmail.com"
   )}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 

@@ -221,11 +221,16 @@ function send_hostinger_smtp($host, $port, $user, $pass, $from_email, $from_name
         return ['success' => false, 'error' => "RCPT TO <{$to}> rejected: {$res}", 'log' => $log];
     }
 
-    // 6. RCPT TO (CC sender copy)
-    if (!empty($cc) && $cc !== $to && filter_var($cc, FILTER_VALIDATE_EMAIL)) {
-        send_cmd($socket, "RCPT TO:<{$cc}>", $log);
-        $res = read_response($socket, $log);
-        // Note: CC might return 250 or 251
+    // 6. RCPT TO (CC recipients - supports comma-separated list)
+    if (!empty($cc)) {
+        $cc_emails = preg_split('/[\s,]+/', $cc, -1, PREG_SPLIT_NO_EMPTY);
+        foreach ($cc_emails as $single_cc) {
+            $single_cc = trim($single_cc);
+            if (!empty($single_cc) && strtolower($single_cc) !== strtolower($to) && filter_var($single_cc, FILTER_VALIDATE_EMAIL)) {
+                send_cmd($socket, "RCPT TO:<{$single_cc}>", $log);
+                read_response($socket, $log);
+            }
+        }
     }
 
     // 7. DATA
