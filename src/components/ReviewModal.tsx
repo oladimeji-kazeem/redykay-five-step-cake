@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Star, X, CheckCircle2, MessageSquareHeart, Sparkles, Send, ShieldCheck, HeartHandshake } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -6,6 +6,7 @@ import {
   type CustomerReview,
   type ExperienceOccasion,
 } from "@/lib/feedbackService";
+import { useOccasionsAndStyles } from "@/lib/occasionStyleService";
 
 interface ReviewModalProps {
   isOpen: boolean;
@@ -50,6 +51,12 @@ export function ReviewModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedReview, setSubmittedReview] = useState<CustomerReview | null>(null);
+
+  const { activeOccasions } = useOccasionsAndStyles();
+  const occasionOptions = useMemo(() => {
+    const names = activeOccasions.map((o) => o.name);
+    return Array.from(new Set([...names, ...OCCASIONS]));
+  }, [activeOccasions]);
 
   if (!isOpen) return null;
 
@@ -276,7 +283,7 @@ export function ReviewModal({
                     onChange={(e) => setOccasion(e.target.value as ExperienceOccasion)}
                     className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                   >
-                    {OCCASIONS.map((occ) => (
+                    {occasionOptions.map((occ) => (
                       <option key={occ} value={occ}>
                         {occ}
                       </option>

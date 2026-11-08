@@ -14,8 +14,17 @@ function Cakes() {
   const [occ, setOcc] = useState<string>("All");
   const [sty, setSty] = useState<string>("All");
 
-  const occasions = useMemo(() => ["All", ...Array.from(new Set(content.gallery.map((g) => g.occasion)))], [content.gallery]);
-  const styles = useMemo(() => ["All", ...Array.from(new Set(content.gallery.map((g) => g.style)))], [content.gallery]);
+  const occasions = useMemo(() => {
+    const fromContent = content.occasions?.filter((o) => o.isActive).map((o) => o.name) || [];
+    const fromGallery = content.gallery.map((g) => g.occasion);
+    return ["All", ...Array.from(new Set([...fromContent, ...fromGallery]))];
+  }, [content.occasions, content.gallery]);
+
+  const styles = useMemo(() => {
+    const fromContent = content.styles?.filter((s) => s.isActive).map((s) => s.name) || [];
+    const fromGallery = content.gallery.map((g) => g.style);
+    return ["All", ...Array.from(new Set([...fromContent, ...fromGallery]))];
+  }, [content.styles, content.gallery]);
 
   const items = content.gallery.filter((g) => (occ === "All" || g.occasion === occ) && (sty === "All" || g.style === sty));
 

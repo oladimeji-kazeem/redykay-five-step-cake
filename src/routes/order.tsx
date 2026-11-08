@@ -36,12 +36,11 @@ function Order() {
 
   const contact = content.contact;
   const occasionsList = useMemo(() => {
-    const list = Array.from(new Set([
-      ...content.gallery.map((g) => g.occasion),
-      "Wedding", "Birthday", "Corporate", "Celebration", "Baby shower", "Tasting box"
-    ]));
-    return list;
-  }, [content.gallery]);
+    const fromContent = content.occasions?.filter((o) => o.isActive).map((o) => o.name) || [];
+    const fromGallery = content.gallery.map((g) => g.occasion);
+    const defaults = ["Wedding", "Birthday", "Corporate", "Celebration", "Baby shower", "Tasting box"];
+    return Array.from(new Set([...fromContent, ...fromGallery, ...defaults]));
+  }, [content.occasions, content.gallery]);
 
   const flavoursList = content.dietary.flavours && content.dietary.flavours.length > 0
     ? content.dietary.flavours

@@ -10,7 +10,8 @@ export type ExperienceOccasion =
   | "Tasting Box"
   | "Dietary-Friendly"
   | "Corporate"
-  | "Other";
+  | "Other"
+  | (string & {});
 
 export interface CustomerReview {
   id: string;

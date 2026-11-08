@@ -2,6 +2,26 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { gallery as defaultGallery, CONTACT as defaultContact, images } from "@/lib/site";
 
+export interface OccasionItem {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  badgeColor?: string;
+  isActive: boolean;
+  order: number;
+}
+
+export interface StyleItem {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  badgeColor?: string;
+  isActive: boolean;
+  order: number;
+}
+
 export interface TrustItem {
   title: string;
   text: string;
@@ -16,8 +36,8 @@ export interface CakeItem {
   id?: string;
   src: string;
   title: string;
-  occasion: "Wedding" | "Birthday" | "Corporate" | "Celebration";
-  style: "Sculpted" | "Buttercream" | "Fondant" | "Dietary-Friendly";
+  occasion: string;
+  style: string;
   brief: string;
   solution: string;
 }
@@ -28,8 +48,13 @@ export interface StepItem {
 }
 
 export interface FaqItem {
+  id?: string;
   q: string;
   a: string;
+  category?: string;
+  isActive?: boolean;
+  order?: number;
+  updatedAt?: string;
 }
 
 export interface DietaryCategory {
@@ -75,6 +100,8 @@ export interface SiteContent {
     promiseNotice: string;
   };
   faq: FaqItem[];
+  occasions?: OccasionItem[];
+  styles?: StyleItem[];
   about: {
     eyebrow: string;
     title: string;
@@ -150,12 +177,28 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     promiseNotice: "Every enquiry gets a real reply within 24 hours, Monday to Saturday. If we can't make your date, we'll tell you straight away.",
   },
   faq: [
-    { q: "How far ahead should I order?", a: "For celebration cakes, two to three weeks is comfortable. Weddings are usually booked a few months ahead. Short notice? Ask anyway — we'll tell you honestly whether we can help." },
-    { q: "Do you take a deposit?", a: "Yes, a deposit secures your date in our diary. We'll explain the amount and when the balance is due in your quote, so there are no surprises." },
-    { q: "What if I need to change something?", a: "Plans change — that's normal. Let us know as early as you can and we'll do our best to adjust the design, size or date." },
-    { q: "Do you deliver?", a: "We deliver and set up across London & the Home Counties, or you're welcome to collect from our studio. Delivery cost is included in your quote." },
-    { q: "How do you handle allergens?", a: "We bake in a kitchen that handles nuts, gluten, dairy and eggs. We take careful steps to prevent cross-contact and will always be upfront about what that means for severe allergies." },
-    { q: "How quickly will you reply?", a: "Every enquiry gets a real reply within 24 hours, Monday to Saturday." },
+    { id: "faq_1", q: "How far ahead should I order?", a: "For celebration cakes, two to three weeks is comfortable. Weddings are usually booked a few months ahead. Short notice? Ask anyway — we'll tell you honestly whether we can help.", category: "Ordering & Timelines", isActive: true, order: 1 },
+    { id: "faq_2", q: "Do you take a deposit?", a: "Yes, a deposit secures your date in our diary. We'll explain the amount and when the balance is due in your quote, so there are no surprises.", category: "Pricing & Deposits", isActive: true, order: 2 },
+    { id: "faq_3", q: "What if I need to change something?", a: "Plans change — that's normal. Let us know as early as you can and we'll do our best to adjust the design, size or date.", category: "Ordering & Timelines", isActive: true, order: 3 },
+    { id: "faq_4", q: "Do you deliver?", a: "We deliver and set up across London & the Home Counties, or you're welcome to collect from our studio. Delivery cost is included in your quote.", category: "Delivery & Pickup", isActive: true, order: 4 },
+    { id: "faq_5", q: "How do you handle allergens?", a: "We bake in a kitchen that handles nuts, gluten, dairy and eggs. We take careful steps to prevent cross-contact and will always be upfront about what that means for severe allergies.", category: "Dietary & Allergens", isActive: true, order: 5 },
+    { id: "faq_6", q: "How quickly will you reply?", a: "Every enquiry gets a real reply within 24 hours, Monday to Saturday.", category: "Ordering & Timelines", isActive: true, order: 6 },
+  ],
+  occasions: [
+    { id: "occ_wedding", name: "Wedding", slug: "wedding", isActive: true, order: 1, badgeColor: "#ec4899" },
+    { id: "occ_birthday", name: "Birthday", slug: "birthday", isActive: true, order: 2, badgeColor: "#f59e0b" },
+    { id: "occ_corporate", name: "Corporate", slug: "corporate", isActive: true, order: 3, badgeColor: "#3b82f6" },
+    { id: "occ_celebration", name: "Celebration", slug: "celebration", isActive: true, order: 4, badgeColor: "#8b5cf6" },
+    { id: "occ_babyshower", name: "Baby Shower", slug: "baby-shower", isActive: true, order: 5, badgeColor: "#06b6d4" },
+    { id: "occ_tastingbox", name: "Tasting Box", slug: "tasting-box", isActive: true, order: 6, badgeColor: "#10b981" },
+  ],
+  styles: [
+    { id: "sty_buttercream", name: "Buttercream", slug: "buttercream", isActive: true, order: 1, badgeColor: "#f59e0b" },
+    { id: "sty_sculpted", name: "Sculpted", slug: "sculpted", isActive: true, order: 2, badgeColor: "#ec4899" },
+    { id: "sty_fondant", name: "Fondant", slug: "fondant", isActive: true, order: 3, badgeColor: "#3b82f6" },
+    { id: "sty_dietary", name: "Dietary-Friendly", slug: "dietary-friendly", isActive: true, order: 4, badgeColor: "#10b981" },
+    { id: "sty_naked", name: "Semi-Naked & Rustic", slug: "semi-naked-rustic", isActive: true, order: 5, badgeColor: "#8b5cf6" },
+    { id: "sty_floral", name: "Pressed Florals", slug: "pressed-florals", isActive: true, order: 6, badgeColor: "#14b8a6" },
   ],
   about: {
     eyebrow: "Our story",
@@ -191,6 +234,9 @@ export function getCachedContent(): SiteContent {
       dietary: { ...DEFAULT_SITE_CONTENT.dietary, ...(parsed.dietary || {}) },
       tasting: { ...DEFAULT_SITE_CONTENT.tasting, ...(parsed.tasting || {}) },
       howItWorks: { ...DEFAULT_SITE_CONTENT.howItWorks, ...(parsed.howItWorks || {}) },
+      faq: Array.isArray(parsed.faq) ? parsed.faq : DEFAULT_SITE_CONTENT.faq,
+      occasions: Array.isArray(parsed.occasions) ? parsed.occasions : DEFAULT_SITE_CONTENT.occasions,
+      styles: Array.isArray(parsed.styles) ? parsed.styles : DEFAULT_SITE_CONTENT.styles,
       about: { ...DEFAULT_SITE_CONTENT.about, ...(parsed.about || {}) },
       cta: { ...DEFAULT_SITE_CONTENT.cta, ...(parsed.cta || {}) },
     };

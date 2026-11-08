@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import {
   LayoutDashboard,
@@ -52,6 +52,15 @@ import {
   ThumbsUp,
   Quote,
   Palette,
+  HelpCircle,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown,
+  CheckCircle,
+  Tags,
+  Tag,
+  Layers,
+  BookmarkCheck,
 } from "lucide-react";
 import {
   AreaChart,
@@ -74,6 +83,12 @@ import {
   type TrustItem,
   type DietaryCategory,
 } from "@/lib/siteContent";
+import {
+  FAQ_CATEGORIES,
+  DEFAULT_FAQS,
+  persistFaqs,
+  type FaqCategory,
+} from "@/lib/faqService";
 import {
   useCmsAuth,
   type CmsUser,
@@ -145,13 +160,19 @@ import {
   type StudioTheme,
   type ThemeColors,
 } from "@/lib/themeService";
+import {
+  useOccasionsAndStyles,
+  type OccasionItem,
+  type StyleItem,
+  slugify,
+} from "@/lib/occasionStyleService";
 
 export const Route = createFileRoute("/cms")({
   head: () => seo("CMS Admin Studio — Redycakes", "Manage site content, orders, inquiries, web analytics and team access."),
   component: CmsPage,
 });
 
-type TabType = "overview" | "analytics" | "content" | "theme" | "orders" | "messages" | "chats" | "reviews" | "users" | "payments" | "database";
+type TabType = "overview" | "analytics" | "content" | "theme" | "faqs" | "taxonomy" | "orders" | "messages" | "chats" | "reviews" | "users" | "payments" | "database";
 type ContentSection = "hero" | "cakes" | "trust" | "dietary" | "tasting" | "howItWorks" | "faq" | "about" | "contact";
 
 function CmsPage() {
@@ -338,6 +359,559 @@ function CmsPage() {
     setDraftTheme(def);
     setHasUnsavedThemeChanges(false);
     toast.info("Theme reset to original Royal Berry & Violet.");
+  };
+
+  // FAQ Management state
+  const [faqSearch, setFaqSearch] = useState("");
+  const [faqCategoryFilter, setFaqCategoryFilter] = useState("all");
+  const [isFaqModalOpen, setIsFaqModalOpen] = useState(false);
+  const [editingFaq, setEditingFaq] = useState<FaqItem | null>(null);
+  const [faqFormQuestion, setFaqFormQuestion] = useState("");
+  const [faqFormAnswer, setFaqFormAnswer] = useState("");
+  const [faqFormCategory, setFaqFormCategory] = useState<string>("Ordering & Timelines");
+  const [faqFormCustomCategory, setFaqFormCustomCategory] = useState("");
+  const [faqFormIsActive, setFaqFormIsActive] = useState(true);
+  const [deletingFaq, setDeletingFaq] = useState<FaqItem | null>(null);
+  const [isSavingFaq, setIsSavingFaq] = useState(false);
+
+  // Compute unique categories present in current draft
+  const existingFaqCategories = useMemo(() => {
+    const set = new Set<string>();
+    (draftContent.faq || []).forEach((f) => {
+      if (f.category) set.add(f.category);
+    });
+    return Array.from(set);
+  }, [draftContent.faq]);
+
+  // Compute filtered FAQs
+  const filteredFaqs = useMemo(() => {
+    const list = Array.isArray(draftContent.faq) ? draftContent.faq : [];
+    return list.filter((f) => {
+      const matchCategory =
+        faqCategoryFilter === "all" || f.category === faqCategoryFilter;
+      const qLower = (f.q || "").toLowerCase();
+      const aLower = (f.a || "").toLowerCase();
+      const sLower = faqSearch.toLowerCase().trim();
+      const matchSearch =
+        !sLower || qLower.includes(sLower) || aLower.includes(sLower);
+      return matchCategory && matchSearch;
+    });
+  }, [draftContent.faq, faqCategoryFilter, faqSearch]);
+
+  const handleOpenAddFaqModal = () => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: Only Superadmins, Admins, and Editors can create FAQs.");
+      return;
+    }
+    setEditingFaq(null);
+    setFaqFormQuestion("");
+    setFaqFormAnswer("");
+    setFaqFormCategory("Ordering & Timelines");
+    setFaqFormCustomCategory("");
+    setFaqFormIsActive(true);
+    setIsFaqModalOpen(true);
+  };
+
+  const handleOpenEditFaqModal = (faq: FaqItem) => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: Only Superadmins, Admins, and Editors can edit FAQs.");
+      return;
+    }
+    setEditingFaq(faq);
+    setFaqFormQuestion(faq.q);
+    setFaqFormAnswer(faq.a);
+    const isPreset = (FAQ_CATEGORIES as readonly string[]).includes(faq.category || "");
+    if (isPreset) {
+      setFaqFormCategory(faq.category || "General");
+      setFaqFormCustomCategory("");
+    } else {
+      setFaqFormCategory("Custom");
+      setFaqFormCustomCategory(faq.category || "");
+    }
+    setFaqFormIsActive(faq.isActive !== false);
+    setIsFaqModalOpen(true);
+  };
+
+  const handleSaveFaqModal = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!canEditContent) {
+      toast.error("View-only access: Privilege upgrade required to save FAQs.");
+      return;
+    }
+    if (!faqFormQuestion.trim()) {
+      toast.error("Please enter a question.");
+      return;
+    }
+    if (!faqFormAnswer.trim()) {
+      toast.error("Please enter an answer.");
+      return;
+    }
+
+    const resolvedCategory =
+      faqFormCategory === "Custom"
+        ? (faqFormCustomCategory.trim() || "General")
+        : faqFormCategory;
+
+    setIsSavingFaq(true);
+    try {
+      let updatedFaqs: FaqItem[];
+      if (editingFaq) {
+        updatedFaqs = (draftContent.faq || []).map((f) => {
+          const matchId = f.id && editingFaq.id && f.id === editingFaq.id;
+          const matchQ = f.q === editingFaq.q;
+          if (matchId || matchQ) {
+            return {
+              ...f,
+              id: f.id || `faq_${Date.now()}`,
+              q: faqFormQuestion.trim(),
+              a: faqFormAnswer.trim(),
+              category: resolvedCategory,
+              isActive: faqFormIsActive,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return f;
+        });
+        toast.success("FAQ updated successfully!", {
+          description: "Live changes synced to storefront.",
+        });
+      } else {
+        const newFaq: FaqItem = {
+          id: `faq_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          q: faqFormQuestion.trim(),
+          a: faqFormAnswer.trim(),
+          category: resolvedCategory,
+          isActive: faqFormIsActive,
+          order: (draftContent.faq?.length || 0) + 1,
+          updatedAt: new Date().toISOString(),
+        };
+        updatedFaqs = [...(draftContent.faq || []), newFaq];
+        toast.success("New FAQ added and published!", {
+          description: `Category: ${resolvedCategory}`,
+        });
+      }
+
+      updateDraft((prev) => ({
+        ...prev,
+        faq: updatedFaqs,
+      }));
+      await persistFaqs(updatedFaqs);
+
+      setIsFaqModalOpen(false);
+      setEditingFaq(null);
+    } catch (err) {
+      console.error("Error saving FAQ", err);
+      toast.error("Failed to save FAQ. Please try again.");
+    } finally {
+      setIsSavingFaq(false);
+    }
+  };
+
+  const handleDeleteFaqConfirm = async () => {
+    if (!deletingFaq || !canEditContent) return;
+    const targetId = deletingFaq.id;
+    const targetQ = deletingFaq.q;
+
+    const updatedFaqs = (draftContent.faq || []).filter((f) => {
+      if (targetId && f.id) return f.id !== targetId;
+      return f.q !== targetQ;
+    });
+
+    updateDraft((prev) => ({
+      ...prev,
+      faq: updatedFaqs,
+    }));
+    await persistFaqs(updatedFaqs);
+
+    setDeletingFaq(null);
+    toast.success("FAQ deleted from storefront.");
+  };
+
+  const handleToggleFaqActive = async (faq: FaqItem) => {
+    if (!canEditContent) {
+      toast.error("Privilege required to change FAQ visibility.");
+      return;
+    }
+    const nextActive = faq.isActive === false ? true : false;
+    const updatedFaqs = (draftContent.faq || []).map((f) => {
+      const match = (faq.id && f.id && f.id === faq.id) || f.q === faq.q;
+      if (match) {
+        return { ...f, isActive: nextActive, updatedAt: new Date().toISOString() };
+      }
+      return f;
+    });
+
+    updateDraft((prev) => ({ ...prev, faq: updatedFaqs }));
+    await persistFaqs(updatedFaqs);
+    toast.success(nextActive ? "FAQ published live!" : "FAQ hidden from storefront.");
+  };
+
+  const handleMoveFaq = async (index: number, direction: "up" | "down") => {
+    if (!canEditContent) return;
+    const list = [...(draftContent.faq || [])];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+
+    const temp = list[index];
+    list[index] = list[targetIndex];
+    list[targetIndex] = temp;
+
+    const reordered = list.map((f, i) => ({ ...f, order: i + 1 }));
+    updateDraft((prev) => ({ ...prev, faq: reordered }));
+    await persistFaqs(reordered);
+    toast.success(`FAQ moved ${direction}.`);
+  };
+
+  const handleResetFaqs = async () => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: Superadmins, Admins, and Editors only.");
+      return;
+    }
+    if (!confirm("Are you sure you want to reset all FAQs to default bakery questions? This cannot be undone.")) return;
+
+    updateDraft((prev) => ({ ...prev, faq: DEFAULT_FAQS }));
+    await persistFaqs(DEFAULT_FAQS);
+    toast.info("FAQs reset to bakery defaults.");
+  };
+
+  // -----------------------------------------------------------------
+  // TAXONOMY (OCCASIONS & CAKE STYLES) STATE & HANDLERS
+  // -----------------------------------------------------------------
+  const {
+    occasions,
+    styles,
+    activeOccasions,
+    activeStyles,
+    refresh: refreshTaxonomy,
+    addOccasion: serviceAddOccasion,
+    updateOccasion: serviceUpdateOccasion,
+    deleteOccasion: serviceDeleteOccasion,
+    reorderOccasions: serviceReorderOccasions,
+    resetOccasionsToDefault: serviceResetOccasions,
+    addStyle: serviceAddStyle,
+    updateStyle: serviceUpdateStyle,
+    deleteStyle: serviceDeleteStyle,
+    reorderStyles: serviceReorderStyles,
+    resetStylesToDefault: serviceResetStyles,
+  } = useOccasionsAndStyles();
+
+  const [taxonomySubTab, setTaxonomySubTab] = useState<"occasions" | "styles">("occasions");
+  const [taxonomySearch, setTaxonomySearch] = useState("");
+  const [taxonomyStatusFilter, setTaxonomyStatusFilter] = useState<"all" | "active" | "inactive">("all");
+
+  // Occasion modal & form
+  const [isOccasionModalOpen, setIsOccasionModalOpen] = useState(false);
+  const [editingOccasion, setEditingOccasion] = useState<OccasionItem | null>(null);
+  const [occasionFormName, setOccasionFormName] = useState("");
+  const [occasionFormSlug, setOccasionFormSlug] = useState("");
+  const [occasionFormDesc, setOccasionFormDesc] = useState("");
+  const [occasionFormBadgeColor, setOccasionFormBadgeColor] = useState("#8B5CF6");
+  const [occasionFormIsActive, setOccasionFormIsActive] = useState(true);
+  const [occasionFormSyncCakes, setOccasionFormSyncCakes] = useState(true);
+  const [isSavingOccasion, setIsSavingOccasion] = useState(false);
+
+  // Style modal & form
+  const [isStyleModalOpen, setIsStyleModalOpen] = useState(false);
+  const [editingStyle, setEditingStyle] = useState<StyleItem | null>(null);
+  const [styleFormName, setStyleFormName] = useState("");
+  const [styleFormSlug, setStyleFormSlug] = useState("");
+  const [styleFormDesc, setStyleFormDesc] = useState("");
+  const [styleFormBadgeColor, setStyleFormBadgeColor] = useState("#EC4899");
+  const [styleFormIsActive, setStyleFormIsActive] = useState(true);
+  const [styleFormSyncCakes, setStyleFormSyncCakes] = useState(true);
+  const [isSavingStyle, setIsSavingStyle] = useState(false);
+
+  // Delete modal state
+  const [deletingTaxonomyItem, setDeletingTaxonomyItem] = useState<{
+    type: "occasion" | "style";
+    item: OccasionItem | StyleItem;
+    linkedCakeCount: number;
+  } | null>(null);
+
+  // Helper counts
+  const getOccasionCakeCount = useCallback((occasionName: string) => {
+    return (draftContent.gallery || []).filter(
+      (c) => c.occasion?.toLowerCase() === occasionName?.toLowerCase()
+    ).length;
+  }, [draftContent.gallery]);
+
+  const getStyleCakeCount = useCallback((styleName: string) => {
+    return (draftContent.gallery || []).filter(
+      (c) => c.style?.toLowerCase() === styleName?.toLowerCase()
+    ).length;
+  }, [draftContent.gallery]);
+
+  // Filtered lists
+  const filteredOccasions = useMemo(() => {
+    return occasions
+      .filter((o) => {
+        const matchStatus =
+          taxonomyStatusFilter === "all" ||
+          (taxonomyStatusFilter === "active" && o.isActive) ||
+          (taxonomyStatusFilter === "inactive" && !o.isActive);
+        const s = taxonomySearch.toLowerCase().trim();
+        const matchSearch =
+          !s ||
+          o.name.toLowerCase().includes(s) ||
+          o.slug.toLowerCase().includes(s) ||
+          (o.description && o.description.toLowerCase().includes(s));
+        return matchStatus && matchSearch;
+      })
+      .sort((a, b) => a.order - b.order);
+  }, [occasions, taxonomyStatusFilter, taxonomySearch]);
+
+  const filteredStyles = useMemo(() => {
+    return styles
+      .filter((s) => {
+        const matchStatus =
+          taxonomyStatusFilter === "all" ||
+          (taxonomyStatusFilter === "active" && s.isActive) ||
+          (taxonomyStatusFilter === "inactive" && !s.isActive);
+        const sLower = taxonomySearch.toLowerCase().trim();
+        const matchSearch =
+          !sLower ||
+          s.name.toLowerCase().includes(sLower) ||
+          s.slug.toLowerCase().includes(sLower) ||
+          (s.description && s.description.toLowerCase().includes(sLower));
+        return matchStatus && matchSearch;
+      })
+      .sort((a, b) => a.order - b.order);
+  }, [styles, taxonomyStatusFilter, taxonomySearch]);
+
+  // Occasion action handlers
+  const handleOpenAddOccasion = () => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: Only Superadmins, Admins, and Editors can create occasions.");
+      return;
+    }
+    setEditingOccasion(null);
+    setOccasionFormName("");
+    setOccasionFormSlug("");
+    setOccasionFormDesc("");
+    setOccasionFormBadgeColor("#8B5CF6");
+    setOccasionFormIsActive(true);
+    setOccasionFormSyncCakes(true);
+    setIsOccasionModalOpen(true);
+  };
+
+  const handleOpenEditOccasion = (occ: OccasionItem) => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: You need edit permissions to modify occasions.");
+      return;
+    }
+    setEditingOccasion(occ);
+    setOccasionFormName(occ.name);
+    setOccasionFormSlug(occ.slug);
+    setOccasionFormDesc(occ.description || "");
+    setOccasionFormBadgeColor(occ.badgeColor || "#8B5CF6");
+    setOccasionFormIsActive(occ.isActive);
+    setOccasionFormSyncCakes(true);
+    setIsOccasionModalOpen(true);
+  };
+
+  const handleSaveOccasion = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!canEditContent) return;
+    if (!occasionFormName.trim()) {
+      toast.error("Occasion name is required.");
+      return;
+    }
+    setIsSavingOccasion(true);
+    try {
+      if (editingOccasion) {
+        await serviceUpdateOccasion(
+          editingOccasion.id,
+          {
+            name: occasionFormName.trim(),
+            slug: occasionFormSlug.trim() || slugify(occasionFormName),
+            description: occasionFormDesc.trim(),
+            badgeColor: occasionFormBadgeColor,
+            isActive: occasionFormIsActive,
+          },
+          { syncLinkedCakes: occasionFormSyncCakes }
+        );
+        toast.success(`Occasion "${occasionFormName}" updated.`);
+      } else {
+        await serviceAddOccasion({
+          name: occasionFormName.trim(),
+          slug: occasionFormSlug.trim() || slugify(occasionFormName),
+          description: occasionFormDesc.trim(),
+          badgeColor: occasionFormBadgeColor,
+          isActive: occasionFormIsActive,
+        });
+        toast.success(`Occasion "${occasionFormName}" added.`);
+      }
+      setIsOccasionModalOpen(false);
+      setEditingOccasion(null);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save occasion.");
+    } finally {
+      setIsSavingOccasion(false);
+    }
+  };
+
+  const handleToggleOccasionActive = async (occ: OccasionItem) => {
+    if (!canEditContent) return;
+    const nextActive = !occ.isActive;
+    await serviceUpdateOccasion(occ.id, { isActive: nextActive });
+    toast.success(`Occasion "${occ.name}" is now ${nextActive ? "Live on Storefront" : "Hidden"}.`);
+  };
+
+  const handleMoveOccasion = async (index: number, direction: "up" | "down") => {
+    if (!canEditContent) return;
+    const targetIdx = direction === "up" ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= occasions.length) return;
+    const reordered = [...occasions];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIdx, 0, moved);
+    await serviceReorderOccasions(reordered);
+    toast.success("Occasions reordered.");
+  };
+
+  const handleOpenDeleteOccasion = (occ: OccasionItem) => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: You need edit permissions to delete occasions.");
+      return;
+    }
+    const count = getOccasionCakeCount(occ.name);
+    setDeletingTaxonomyItem({
+      type: "occasion",
+      item: occ,
+      linkedCakeCount: count,
+    });
+  };
+
+  const handleConfirmDeleteOccasion = async () => {
+    if (!deletingTaxonomyItem || deletingTaxonomyItem.type !== "occasion") return;
+    const occ = deletingTaxonomyItem.item as OccasionItem;
+    await serviceDeleteOccasion(occ.id);
+    toast.success(`Occasion "${occ.name}" deleted.`);
+    setDeletingTaxonomyItem(null);
+  };
+
+  const handleResetOccasions = async () => {
+    if (!canEditContent) return;
+    if (!confirm("Reset all occasions back to the default bakery set?")) return;
+    await serviceResetOccasions();
+    toast.info("Occasions reset to defaults.");
+  };
+
+  // Style action handlers
+  const handleOpenAddStyle = () => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: Only Superadmins, Admins, and Editors can create styles.");
+      return;
+    }
+    setEditingStyle(null);
+    setStyleFormName("");
+    setStyleFormSlug("");
+    setStyleFormDesc("");
+    setStyleFormBadgeColor("#EC4899");
+    setStyleFormIsActive(true);
+    setStyleFormSyncCakes(true);
+    setIsStyleModalOpen(true);
+  };
+
+  const handleOpenEditStyle = (sty: StyleItem) => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: You need edit permissions to modify styles.");
+      return;
+    }
+    setEditingStyle(sty);
+    setStyleFormName(sty.name);
+    setStyleFormSlug(sty.slug);
+    setStyleFormDesc(sty.description || "");
+    setStyleFormBadgeColor(sty.badgeColor || "#EC4899");
+    setStyleFormIsActive(sty.isActive);
+    setStyleFormSyncCakes(true);
+    setIsStyleModalOpen(true);
+  };
+
+  const handleSaveStyle = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!canEditContent) return;
+    if (!styleFormName.trim()) {
+      toast.error("Style name is required.");
+      return;
+    }
+    setIsSavingStyle(true);
+    try {
+      if (editingStyle) {
+        await serviceUpdateStyle(
+          editingStyle.id,
+          {
+            name: styleFormName.trim(),
+            slug: styleFormSlug.trim() || slugify(styleFormName),
+            description: styleFormDesc.trim(),
+            badgeColor: styleFormBadgeColor,
+            isActive: styleFormIsActive,
+          },
+          { syncLinkedCakes: styleFormSyncCakes }
+        );
+        toast.success(`Style "${styleFormName}" updated.`);
+      } else {
+        await serviceAddStyle({
+          name: styleFormName.trim(),
+          slug: styleFormSlug.trim() || slugify(styleFormName),
+          description: styleFormDesc.trim(),
+          badgeColor: styleFormBadgeColor,
+          isActive: styleFormIsActive,
+        });
+        toast.success(`Style "${styleFormName}" added.`);
+      }
+      setIsStyleModalOpen(false);
+      setEditingStyle(null);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save style.");
+    } finally {
+      setIsSavingStyle(false);
+    }
+  };
+
+  const handleToggleStyleActive = async (sty: StyleItem) => {
+    if (!canEditContent) return;
+    const nextActive = !sty.isActive;
+    await serviceUpdateStyle(sty.id, { isActive: nextActive });
+    toast.success(`Style "${sty.name}" is now ${nextActive ? "Live on Storefront" : "Hidden"}.`);
+  };
+
+  const handleMoveStyle = async (index: number, direction: "up" | "down") => {
+    if (!canEditContent) return;
+    const targetIdx = direction === "up" ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= styles.length) return;
+    const reordered = [...styles];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIdx, 0, moved);
+    await serviceReorderStyles(reordered);
+    toast.success("Styles reordered.");
+  };
+
+  const handleOpenDeleteStyle = (sty: StyleItem) => {
+    if (!canEditContent) {
+      toast.error("Privilege restriction: You need edit permissions to delete styles.");
+      return;
+    }
+    const count = getStyleCakeCount(sty.name);
+    setDeletingTaxonomyItem({
+      type: "style",
+      item: sty,
+      linkedCakeCount: count,
+    });
+  };
+
+  const handleConfirmDeleteStyle = async () => {
+    if (!deletingTaxonomyItem || deletingTaxonomyItem.type !== "style") return;
+    const sty = deletingTaxonomyItem.item as StyleItem;
+    await serviceDeleteStyle(sty.id);
+    toast.success(`Style "${sty.name}" deleted.`);
+    setDeletingTaxonomyItem(null);
+  };
+
+  const handleResetStyles = async () => {
+    if (!canEditContent) return;
+    if (!confirm("Reset all cake styles back to the default bakery set?")) return;
+    await serviceResetStyles();
+    toast.info("Cake styles reset to defaults.");
   };
 
   // Hostinger SMTP state (smtp.hostinger.com:465)
@@ -1056,6 +1630,40 @@ function CmsPage() {
             </button>
 
             <button
+              onClick={() => setActiveTab("faqs")}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "faqs"
+                  ? "bg-primary text-primary-foreground shadow-soft"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <HelpCircle className="h-4 w-4" />
+                <span>FAQs & Questions</span>
+              </div>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-accent/80 text-foreground font-semibold">
+                {draftContent.faq?.length || 0}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("taxonomy")}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "taxonomy"
+                  ? "bg-primary text-primary-foreground shadow-soft"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Tags className="h-4 w-4" />
+                <span>Occasions & Styles</span>
+              </div>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-accent/80 text-foreground font-semibold">
+                {occasions.length + styles.length}
+              </span>
+            </button>
+
+            <button
               onClick={() => setActiveTab("orders")}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                 activeTab === "orders"
@@ -1372,6 +1980,17 @@ function CmsPage() {
                       <p className="text-xs text-muted-foreground">Add new cakes or update styling</p>
                     </div>
                     <ShoppingBag className="h-4 w-4 text-primary" />
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab("taxonomy")}
+                    className="w-full text-left p-3 rounded-xl border border-border/60 hover:border-primary/50 hover:bg-primary/5 transition flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">Occasions & Cake Styles</p>
+                      <p className="text-xs text-muted-foreground">{occasions.length} occasions · {styles.length} styles managed</p>
+                    </div>
+                    <Tags className="h-4 w-4 text-primary" />
                   </button>
 
                   <button
@@ -1912,24 +2531,34 @@ function CmsPage() {
                       Display cakes in gallery with styling notes, occasion, and photo.
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setEditingCakeIndex(null);
-                      setCakeForm({
-                        title: "",
-                        occasion: "Celebration",
-                        style: "Buttercream",
-                        src: "/cakes/cake-sample-1.jpg",
-                        brief: "",
-                        solution: "",
-                      });
-                      setCakeModalOpen(true);
-                    }}
-                    className="btn btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add New Cake
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("taxonomy")}
+                      className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition flex items-center gap-1.5"
+                    >
+                      <Tags className="h-3.5 w-3.5" />
+                      Manage Occasions & Styles →
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingCakeIndex(null);
+                        setCakeForm({
+                          title: "",
+                          occasion: occasions[0]?.name || "Celebration",
+                          style: styles[0]?.name || "Buttercream",
+                          src: "/cakes/cake-sample-1.jpg",
+                          brief: "",
+                          solution: "",
+                        });
+                        setCakeModalOpen(true);
+                      }}
+                      className="btn btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add New Cake
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2173,63 +2802,89 @@ function CmsPage() {
             {/* FAQS */}
             {contentSection === "faq" && (
               <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-soft space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/80">
                   <div>
                     <h2 className="text-base font-semibold">Frequently Asked Questions</h2>
-                    <p className="text-xs text-muted-foreground">Manage customer questions on the FAQ route.</p>
+                    <p className="text-xs text-muted-foreground">Manage customer questions, lead times, and policies on the public FAQ route.</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      updateDraft((prev) => ({
-                        ...prev,
-                        faq: [...prev.faq, { q: "New Question Title", a: "Helpful answer to the customer inquiry." }],
-                      }));
-                    }}
-                    className="btn btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add FAQ
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("faqs")}
+                      className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition flex items-center gap-1.5"
+                    >
+                      <HelpCircle className="h-3.5 w-3.5" />
+                      Open Full FAQ Studio →
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenAddFaqModal}
+                      disabled={!canEditContent}
+                      className="btn btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5 disabled:opacity-40"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add FAQ
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-3">
-                  {draftContent.faq.map((item, idx) => (
-                    <div key={idx} className="p-4 rounded-xl border border-border bg-background space-y-2">
+                  {(draftContent.faq || []).map((item, idx) => (
+                    <div key={item.id || idx} className="p-4 rounded-xl border border-border bg-background space-y-2">
                       <div className="flex items-center justify-between gap-3">
-                        <input
-                          type="text"
-                          value={item.q}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            updateDraft((prev) => {
-                              const list = [...prev.faq];
-                              list[idx] = { ...list[idx], q: val };
-                              return { ...prev, faq: list };
-                            });
-                          }}
-                          className="font-semibold text-sm w-full bg-transparent border-b border-border/80 pb-0.5 focus:border-primary outline-none"
-                        />
-                        <button
-                          onClick={() => {
-                            updateDraft((prev) => ({
-                              ...prev,
-                              faq: prev.faq.filter((_, i) => i !== idx),
-                            }));
-                          }}
-                          className="p-1 rounded text-muted-foreground hover:text-destructive"
-                          title="Delete FAQ"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center gap-2 flex-1">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                            #{idx + 1}
+                          </span>
+                          {item.category && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                              {item.category}
+                            </span>
+                          )}
+                          <input
+                            type="text"
+                            value={item.q}
+                            disabled={!canEditContent}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateDraft((prev) => {
+                                const list = [...(prev.faq || [])];
+                                list[idx] = { ...list[idx], q: val, updatedAt: new Date().toISOString() };
+                                return { ...prev, faq: list };
+                              });
+                            }}
+                            className="font-semibold text-sm w-full bg-transparent border-b border-border/80 pb-0.5 focus:border-primary outline-none"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditFaqModal(item)}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition"
+                            title="Edit FAQ in modal"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => setDeletingFaq(item)}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition disabled:opacity-40"
+                            title="Delete FAQ"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <textarea
                         rows={2}
                         value={item.a}
+                        disabled={!canEditContent}
                         onChange={(e) => {
                           const val = e.target.value;
                           updateDraft((prev) => {
-                            const list = [...prev.faq];
-                            list[idx] = { ...list[idx], a: val };
+                            const list = [...(prev.faq || [])];
+                            list[idx] = { ...list[idx], a: val, updatedAt: new Date().toISOString() };
                             return { ...prev, faq: list };
                           });
                         }}
@@ -2903,7 +3558,859 @@ function CmsPage() {
           </div>
         )}
 
-        {/* ORDERS MANAGEMENT TAB */}
+        {/* FAQS MANAGEMENT TAB */}
+        {activeTab === "faqs" && (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold">Frequently Asked Questions Studio</h1>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary/15 text-primary font-bold">
+                    {draftContent.faq?.length || 0} Questions
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Privileged management: Add, edit, reorder, categorize, and publish questions on the public storefront.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href="/faq"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center gap-1.5"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Preview on Storefront
+                </a>
+                <button
+                  type="button"
+                  onClick={handleResetFaqs}
+                  disabled={!canEditContent}
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center gap-1.5 disabled:opacity-40"
+                  title="Reset to default bakery questions"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset Defaults
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddFaqModal}
+                  disabled={!canEditContent}
+                  className="btn btn-primary !py-2 !px-4 text-xs font-semibold flex items-center gap-1.5 shadow-soft disabled:opacity-40"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add New FAQ
+                </button>
+              </div>
+            </div>
+
+            {/* Privilege status banner */}
+            {!canEditContent ? (
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>
+                    You have view-only access. You need an Editor, Admin, or Superadmin role to add, modify, or delete FAQs.
+                  </span>
+                </div>
+                <span className="font-semibold uppercase tracking-wider text-[10px] px-2 py-0.5 rounded bg-amber-500/20">
+                  Viewer Mode
+                </span>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                  <span>
+                    <strong>Privileged Access:</strong> All additions, edits, deletions, and reordering save to the database and broadcast immediately to all live visitors on <code className="text-primary font-mono font-semibold">/faq</code>.
+                  </span>
+                </div>
+                <span className="font-semibold text-primary text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 self-start sm:self-auto">
+                  Instant Sync Active
+                </span>
+              </div>
+            )}
+
+            {/* Metrics cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-soft">
+                <p className="text-xs text-muted-foreground">Total Questions</p>
+                <p className="text-2xl font-bold font-display text-foreground mt-1">
+                  {draftContent.faq?.length || 0}
+                </p>
+              </div>
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-soft">
+                <p className="text-xs text-emerald-600 font-medium">Published Live</p>
+                <p className="text-2xl font-bold font-display text-emerald-600 mt-1">
+                  {(draftContent.faq || []).filter((f) => f.isActive !== false).length}
+                </p>
+              </div>
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-soft">
+                <p className="text-xs text-amber-600 font-medium">Hidden / Draft</p>
+                <p className="text-2xl font-bold font-display text-amber-600 mt-1">
+                  {(draftContent.faq || []).filter((f) => f.isActive === false).length}
+                </p>
+              </div>
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-soft">
+                <p className="text-xs text-primary font-medium">Active Categories</p>
+                <p className="text-2xl font-bold font-display text-primary mt-1">
+                  {existingFaqCategories.length || 1}
+                </p>
+              </div>
+            </div>
+
+            {/* Filter Toolbar */}
+            <div className="p-4 rounded-2xl bg-card border border-border space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={faqSearch}
+                    onChange={(e) => setFaqSearch(e.target.value)}
+                    placeholder="Search by question or answer keyword..."
+                    className="w-full rounded-xl border border-border bg-background pl-9 pr-8 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                  />
+                  {faqSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setFaqSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Showing <strong>{filteredFaqs.length}</strong> of {draftContent.faq?.length || 0} questions</span>
+                </div>
+              </div>
+
+              {/* Category Filter Pills */}
+              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border/60">
+                <button
+                  type="button"
+                  onClick={() => setFaqCategoryFilter("all")}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
+                    faqCategoryFilter === "all"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  All Categories ({draftContent.faq?.length || 0})
+                </button>
+                {Array.from(new Set([...FAQ_CATEGORIES, ...existingFaqCategories])).map((cat) => {
+                  const count = (draftContent.faq || []).filter((f) => f.category === cat).length;
+                  if (count === 0 && !existingFaqCategories.includes(cat)) return null;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setFaqCategoryFilter(cat)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
+                        faqCategoryFilter === cat
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      {cat} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* FAQ Items Cards List */}
+            <div className="space-y-3">
+              {filteredFaqs.length > 0 ? (
+                filteredFaqs.map((faq, idx) => {
+                  const originalIndex = (draftContent.faq || []).findIndex(
+                    (f) => (f.id && faq.id && f.id === faq.id) || f.q === faq.q
+                  );
+                  const isFirst = originalIndex === 0;
+                  const isLast = originalIndex === (draftContent.faq?.length || 0) - 1;
+                  const isActive = faq.isActive !== false;
+
+                  return (
+                    <div
+                      key={faq.id || idx}
+                      className={`rounded-2xl border transition-all p-4 md:p-5 ${
+                        isActive
+                          ? "bg-card border-border shadow-soft"
+                          : "bg-secondary/20 border-dashed border-border/80 opacity-75"
+                      }`}
+                    >
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                        {/* Left: Reorder buttons & index */}
+                        <div className="flex items-center md:flex-col gap-1 shrink-0">
+                          <button
+                            type="button"
+                            disabled={!canEditContent || isFirst}
+                            onClick={() => handleMoveFaq(originalIndex, "up")}
+                            className="p-1 rounded-lg border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 transition"
+                            title="Move Question Up"
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </button>
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-secondary text-muted-foreground">
+                            #{originalIndex + 1}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={!canEditContent || isLast}
+                            onClick={() => handleMoveFaq(originalIndex, "down")}
+                            className="p-1 rounded-lg border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 transition"
+                            title="Move Question Down"
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {/* Middle: Content */}
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                              {faq.category || "General"}
+                            </span>
+
+                            {isActive ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                Live on Storefront
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                Hidden / Draft
+                              </span>
+                            )}
+
+                            {faq.updatedAt && (
+                              <span className="text-[10px] text-muted-foreground">
+                                Updated {new Date(faq.updatedAt).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className="text-base font-semibold text-foreground">
+                            {faq.q}
+                          </h3>
+
+                          <div className="p-3 rounded-xl bg-background border border-border/60 text-xs text-muted-foreground whitespace-pre-line leading-relaxed">
+                            {faq.a}
+                          </div>
+                        </div>
+
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-1.5 shrink-0 self-end md:self-start">
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleToggleFaqActive(faq)}
+                            className={`p-2 rounded-xl border text-xs font-semibold transition flex items-center gap-1.5 disabled:opacity-40 ${
+                              isActive
+                                ? "border-border text-muted-foreground hover:text-amber-600 hover:bg-amber-500/10"
+                                : "border-emerald-500/30 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20"
+                            }`}
+                            title={isActive ? "Hide from Storefront" : "Publish to Storefront"}
+                          >
+                            {isActive ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            <span className="hidden sm:inline">{isActive ? "Hide" : "Publish"}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleOpenEditFaqModal(faq)}
+                            className="p-2 rounded-xl border border-border text-muted-foreground hover:text-primary hover:bg-accent transition flex items-center gap-1.5 text-xs font-semibold disabled:opacity-40"
+                            title="Edit Question and Answer"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Edit</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => setDeletingFaq(faq)}
+                            className="p-2 rounded-xl border border-destructive/20 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition flex items-center gap-1.5 text-xs font-semibold disabled:opacity-40"
+                            title="Delete FAQ"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-16 text-center rounded-3xl border border-dashed border-border bg-card/40 p-8 space-y-4">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                    <HelpCircle className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">No questions found</h3>
+                    <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1">
+                      {faqSearch || faqCategoryFilter !== "all"
+                        ? "Try clearing your search or category filter to view all questions."
+                        : "There are currently no questions configured. Click 'Add New FAQ' or 'Reset Defaults'."}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    {faqSearch || faqCategoryFilter !== "all" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFaqSearch("");
+                          setFaqCategoryFilter("all");
+                        }}
+                        className="btn btn-secondary !py-2 !px-4 text-xs font-semibold"
+                      >
+                        Clear Filters
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!canEditContent}
+                        onClick={handleOpenAddFaqModal}
+                        className="btn btn-primary !py-2 !px-4 text-xs font-semibold"
+                      >
+                        Add First Question
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* OCCASIONS & CAKE STYLES TAXONOMY TAB */}
+        {activeTab === "taxonomy" && (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold">Occasions & Cake Styles Studio</h1>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary/15 text-primary font-bold">
+                    {occasions.length} Occasions · {styles.length} Styles
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Privileged taxonomy management: Create, edit, reorder, and control occasions and decoration styles across the storefront.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href="/cakes"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center gap-1.5"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Preview in Gallery
+                </a>
+                <button
+                  type="button"
+                  onClick={taxonomySubTab === "occasions" ? handleResetOccasions : handleResetStyles}
+                  disabled={!canEditContent}
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition flex items-center gap-1.5 disabled:opacity-40"
+                  title="Reset to default bakery presets"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset Defaults
+                </button>
+                {taxonomySubTab === "occasions" ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddOccasion}
+                    disabled={!canEditContent}
+                    className="btn btn-primary !py-2 !px-4 text-xs font-semibold flex items-center gap-1.5 shadow-soft disabled:opacity-40"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add New Occasion
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddStyle}
+                    disabled={!canEditContent}
+                    className="btn btn-primary !py-2 !px-4 text-xs font-semibold flex items-center gap-1.5 shadow-soft disabled:opacity-40"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add New Style
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Privilege status banner */}
+            {!canEditContent ? (
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>
+                    You have view-only access. You need an Editor, Admin, or Superadmin role to add, modify, or delete occasions and styles.
+                  </span>
+                </div>
+                <span className="font-semibold uppercase tracking-wider text-[10px] px-2 py-0.5 rounded bg-amber-500/20">
+                  Viewer Mode
+                </span>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                  <span>
+                    <strong>Privileged Access:</strong> All taxonomy changes instantly broadcast to storefront filters on <code className="text-primary font-mono font-semibold">/cakes</code> and the order enquiry step on <code className="text-primary font-mono font-semibold">/order</code>.
+                  </span>
+                </div>
+                <span className="font-semibold text-primary text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 self-start sm:self-auto">
+                  Instant Sync Active
+                </span>
+              </div>
+            )}
+
+            {/* Metrics cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-2xl border border-border/80 bg-card p-4 space-y-1 shadow-soft">
+                <span className="text-[11px] font-medium text-muted-foreground">Active Occasions</span>
+                <p className="text-2xl font-bold font-display text-foreground">
+                  {activeOccasions.length} <span className="text-xs font-normal text-muted-foreground">/ {occasions.length}</span>
+                </p>
+                <p className="text-[10px] text-muted-foreground">Live on order form & filters</p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-4 space-y-1 shadow-soft">
+                <span className="text-[11px] font-medium text-muted-foreground">Active Cake Styles</span>
+                <p className="text-2xl font-bold font-display text-foreground">
+                  {activeStyles.length} <span className="text-xs font-normal text-muted-foreground">/ {styles.length}</span>
+                </p>
+                <p className="text-[10px] text-muted-foreground">Available for gallery cakes</p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-4 space-y-1 shadow-soft">
+                <span className="text-[11px] font-medium text-muted-foreground">Gallery Cakes Tagged</span>
+                <p className="text-2xl font-bold font-display text-foreground">
+                  {draftContent.gallery?.length || 0}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Linked to occasions & styles</p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-4 space-y-1 shadow-soft">
+                <span className="text-[11px] font-medium text-muted-foreground">Database Schema</span>
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Synced</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Supabase & local cache active</p>
+              </div>
+            </div>
+
+            {/* Subtab Switcher: Occasions vs Styles */}
+            <div className="flex items-center gap-2 border-b border-border/80 pb-2">
+              <button
+                type="button"
+                onClick={() => setTaxonomySubTab("occasions")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                  taxonomySubTab === "occasions"
+                    ? "bg-primary text-primary-foreground shadow-soft"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <BookmarkCheck className="h-3.5 w-3.5" />
+                <span>Cake Occasions</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  taxonomySubTab === "occasions" ? "bg-white/20 text-white" : "bg-accent text-foreground"
+                }`}>
+                  {occasions.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTaxonomySubTab("styles")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                  taxonomySubTab === "styles"
+                    ? "bg-primary text-primary-foreground shadow-soft"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                <span>Cake Styles</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  taxonomySubTab === "styles" ? "bg-white/20 text-white" : "bg-accent text-foreground"
+                }`}>
+                  {styles.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Search and Filter Controls */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={taxonomySearch}
+                  onChange={(e) => setTaxonomySearch(e.target.value)}
+                  placeholder={
+                    taxonomySubTab === "occasions"
+                      ? "Search occasions by name, slug, or description..."
+                      : "Search cake styles by name, slug, or description..."
+                  }
+                  className="w-full rounded-xl border border-border bg-card pl-9 pr-3 py-2 text-xs focus:border-primary focus:outline-none"
+                />
+                {taxonomySearch && (
+                  <button
+                    type="button"
+                    onClick={() => setTaxonomySearch("")}
+                    className="absolute right-3 top-2.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={taxonomyStatusFilter}
+                onChange={(e) => setTaxonomyStatusFilter(e.target.value as any)}
+                className="rounded-xl border border-border bg-card px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none"
+              >
+                <option value="all">All Statuses (Active & Hidden)</option>
+                <option value="active">Active on Storefront Only</option>
+                <option value="inactive">Hidden / Inactive Only</option>
+              </select>
+
+              {taxonomySubTab === "occasions" ? (
+                <button
+                  type="button"
+                  onClick={handleOpenAddOccasion}
+                  disabled={!canEditContent}
+                  className="btn btn-primary !py-2 !px-4 text-xs font-semibold shrink-0 flex items-center gap-1.5 disabled:opacity-40"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New Occasion
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenAddStyle}
+                  disabled={!canEditContent}
+                  className="btn btn-primary !py-2 !px-4 text-xs font-semibold shrink-0 flex items-center gap-1.5 disabled:opacity-40"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New Style
+                </button>
+              )}
+            </div>
+
+            {/* OCCASIONS LIST VIEW */}
+            {taxonomySubTab === "occasions" && (
+              <div className="space-y-3">
+                {filteredOccasions.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border/80 p-12 text-center bg-card">
+                    <Tags className="h-8 w-8 text-muted-foreground mx-auto mb-3 opacity-60" />
+                    <p className="text-sm font-semibold text-foreground">No occasions match your criteria</p>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                      {taxonomySearch
+                        ? `No occasion matching "${taxonomySearch}". Try clearing your search.`
+                        : "No occasions currently configured."}
+                    </p>
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      {taxonomySearch && (
+                        <button
+                          type="button"
+                          onClick={() => setTaxonomySearch("")}
+                          className="btn btn-outline !py-1.5 !px-3 text-xs"
+                        >
+                          Clear Search
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleOpenAddOccasion}
+                        disabled={!canEditContent}
+                        className="btn btn-primary !py-1.5 !px-3 text-xs font-semibold"
+                      >
+                        Add First Occasion
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  filteredOccasions.map((occ, idx) => {
+                    const originalIndex = occasions.findIndex((o) => o.id === occ.id);
+                    const isFirst = originalIndex === 0;
+                    const isLast = originalIndex === occasions.length - 1;
+                    const cakeCount = getOccasionCakeCount(occ.name);
+
+                    return (
+                      <div
+                        key={occ.id}
+                        className="rounded-2xl border border-border/80 bg-card p-4 shadow-soft hover:border-primary/40 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      >
+                        {/* Left: Reorder controls & Color Swatch */}
+                        <div className="flex items-center gap-3">
+                          <div className="flex sm:flex-col gap-1 items-center shrink-0">
+                            <button
+                              type="button"
+                              disabled={!canEditContent || isFirst}
+                              onClick={() => handleMoveOccasion(originalIndex, "up")}
+                              className="p-1 rounded-lg border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 transition"
+                              title="Move Occasion Up"
+                            >
+                              <ChevronUp className="h-4 w-4" />
+                            </button>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
+                              #{originalIndex + 1}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={!canEditContent || isLast}
+                              onClick={() => handleMoveOccasion(originalIndex, "down")}
+                              className="p-1 rounded-lg border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 transition"
+                              title="Move Occasion Down"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          {/* Color Swatch Circle */}
+                          <div
+                            className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-black/10 dark:border-white/10"
+                            style={{ backgroundColor: occ.badgeColor || "#8B5CF6" }}
+                            title={`Badge Color: ${occ.badgeColor || "#8B5CF6"}`}
+                          >
+                            <BookmarkCheck className="h-4 w-4 text-white drop-shadow-sm" />
+                          </div>
+
+                          {/* Info */}
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-semibold text-base text-foreground">{occ.name}</h3>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground border border-border/60">
+                                /{occ.slug}
+                              </span>
+                              {occ.isActive ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                  Live on Storefront
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                  Hidden / Draft
+                                </span>
+                              )}
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                                {cakeCount} {cakeCount === 1 ? "cake" : "cakes"} in gallery
+                              </span>
+                            </div>
+                            {occ.description ? (
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{occ.description}</p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground/60 italic mt-1">No description provided.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right Actions */}
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleToggleOccasionActive(occ)}
+                            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
+                              occ.isActive
+                                ? "border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                                : "border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
+                            } disabled:opacity-40`}
+                          >
+                            {occ.isActive ? "Hide" : "Publish"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleOpenEditOccasion(occ)}
+                            className="p-2 rounded-xl border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-40 transition"
+                            title="Edit Occasion"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleOpenDeleteOccasion(occ)}
+                            className="p-2 rounded-xl border border-border/80 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-40 transition"
+                            title="Delete Occasion"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* STYLES LIST VIEW */}
+            {taxonomySubTab === "styles" && (
+              <div className="space-y-3">
+                {filteredStyles.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border/80 p-12 text-center bg-card">
+                    <Layers className="h-8 w-8 text-muted-foreground mx-auto mb-3 opacity-60" />
+                    <p className="text-sm font-semibold text-foreground">No cake styles match your criteria</p>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                      {taxonomySearch
+                        ? `No style matching "${taxonomySearch}". Try clearing your search.`
+                        : "No cake styles currently configured."}
+                    </p>
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      {taxonomySearch && (
+                        <button
+                          type="button"
+                          onClick={() => setTaxonomySearch("")}
+                          className="btn btn-outline !py-1.5 !px-3 text-xs"
+                        >
+                          Clear Search
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleOpenAddStyle}
+                        disabled={!canEditContent}
+                        className="btn btn-primary !py-1.5 !px-3 text-xs font-semibold"
+                      >
+                        Add First Style
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  filteredStyles.map((sty, idx) => {
+                    const originalIndex = styles.findIndex((s) => s.id === sty.id);
+                    const isFirst = originalIndex === 0;
+                    const isLast = originalIndex === styles.length - 1;
+                    const cakeCount = getStyleCakeCount(sty.name);
+
+                    return (
+                      <div
+                        key={sty.id}
+                        className="rounded-2xl border border-border/80 bg-card p-4 shadow-soft hover:border-primary/40 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      >
+                        {/* Left: Reorder controls & Color Swatch */}
+                        <div className="flex items-center gap-3">
+                          <div className="flex sm:flex-col gap-1 items-center shrink-0">
+                            <button
+                              type="button"
+                              disabled={!canEditContent || isFirst}
+                              onClick={() => handleMoveStyle(originalIndex, "up")}
+                              className="p-1 rounded-lg border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 transition"
+                              title="Move Style Up"
+                            >
+                              <ChevronUp className="h-4 w-4" />
+                            </button>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
+                              #{originalIndex + 1}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={!canEditContent || isLast}
+                              onClick={() => handleMoveStyle(originalIndex, "down")}
+                              className="p-1 rounded-lg border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 transition"
+                              title="Move Style Down"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          {/* Color Swatch Circle */}
+                          <div
+                            className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-black/10 dark:border-white/10"
+                            style={{ backgroundColor: sty.badgeColor || "#EC4899" }}
+                            title={`Badge Color: ${sty.badgeColor || "#EC4899"}`}
+                          >
+                            <Layers className="h-4 w-4 text-white drop-shadow-sm" />
+                          </div>
+
+                          {/* Info */}
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-semibold text-base text-foreground">{sty.name}</h3>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground border border-border/60">
+                                /{sty.slug}
+                              </span>
+                              {sty.isActive ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                  Live on Storefront
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                  Hidden / Draft
+                                </span>
+                              )}
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                                {cakeCount} {cakeCount === 1 ? "cake" : "cakes"} in gallery
+                              </span>
+                            </div>
+                            {sty.description ? (
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{sty.description}</p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground/60 italic mt-1">No description provided.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right Actions */}
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleToggleStyleActive(sty)}
+                            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
+                              sty.isActive
+                                ? "border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                                : "border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
+                            } disabled:opacity-40`}
+                          >
+                            {sty.isActive ? "Hide" : "Publish"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleOpenEditStyle(sty)}
+                            className="p-2 rounded-xl border border-border/80 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-40 transition"
+                            title="Edit Style"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canEditContent}
+                            onClick={() => handleOpenDeleteStyle(sty)}
+                            className="p-2 rounded-xl border border-border/80 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-40 transition"
+                            title="Delete Style"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {activeTab === "orders" && (
           <div className="space-y-6 max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -5530,29 +7037,63 @@ function CmsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground">Occasion</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-muted-foreground">Occasion</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCakeModalOpen(false);
+                        setActiveTab("taxonomy");
+                        setTaxonomySubTab("occasions");
+                      }}
+                      className="text-[10px] text-primary hover:underline font-medium"
+                    >
+                      + Manage
+                    </button>
+                  </div>
                   <select
                     value={cakeForm.occasion}
-                    onChange={(e) => setCakeForm((f) => ({ ...f, occasion: e.target.value as any }))}
+                    onChange={(e) => setCakeForm((f) => ({ ...f, occasion: e.target.value }))}
                     className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   >
-                    <option value="Wedding">Wedding</option>
-                    <option value="Birthday">Birthday</option>
-                    <option value="Corporate">Corporate</option>
-                    <option value="Celebration">Celebration</option>
+                    {cakeForm.occasion && !occasions.some((o) => o.name === cakeForm.occasion) && (
+                      <option value={cakeForm.occasion}>{cakeForm.occasion}</option>
+                    )}
+                    {occasions.map((occ) => (
+                      <option key={occ.id} value={occ.name}>
+                        {occ.name} {!occ.isActive ? "(Hidden)" : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground">Style</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-muted-foreground">Style</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCakeModalOpen(false);
+                        setActiveTab("taxonomy");
+                        setTaxonomySubTab("styles");
+                      }}
+                      className="text-[10px] text-primary hover:underline font-medium"
+                    >
+                      + Manage
+                    </button>
+                  </div>
                   <select
                     value={cakeForm.style}
-                    onChange={(e) => setCakeForm((f) => ({ ...f, style: e.target.value as any }))}
+                    onChange={(e) => setCakeForm((f) => ({ ...f, style: e.target.value }))}
                     className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   >
-                    <option value="Buttercream">Buttercream</option>
-                    <option value="Sculpted">Sculpted</option>
-                    <option value="Fondant">Fondant</option>
-                    <option value="Dietary-Friendly">Dietary-Friendly</option>
+                    {cakeForm.style && !styles.some((s) => s.name === cakeForm.style) && (
+                      <option value={cakeForm.style}>{cakeForm.style}</option>
+                    )}
+                    {styles.map((sty) => (
+                      <option key={sty.id} value={sty.name}>
+                        {sty.name} {!sty.isActive ? "(Hidden)" : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -6132,6 +7673,646 @@ function CmsPage() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* FAQ ADD / EDIT MODAL */}
+      {isFaqModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-soft space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border/80 pb-3">
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-primary/20 text-primary">
+                  {editingFaq ? "Modify Question" : "New Question"}
+                </span>
+                <h3 className="text-lg font-bold font-display mt-1">
+                  {editingFaq ? "Edit Frequently Asked Question" : "Add Frequently Asked Question"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFaqModalOpen(false);
+                  setEditingFaq(null);
+                }}
+                className="p-1.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveFaqModal} className="space-y-4">
+              {/* Question Input */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1">
+                  Question Title <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={faqFormQuestion}
+                  onChange={(e) => setFaqFormQuestion(e.target.value)}
+                  placeholder="e.g. How far in advance should I order my celebration cake?"
+                  className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              {/* Category Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">
+                    Category Topic
+                  </label>
+                  <select
+                    value={faqFormCategory}
+                    onChange={(e) => setFaqFormCategory(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                  >
+                    {FAQ_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    <option value="Custom">+ Custom Category...</option>
+                  </select>
+                </div>
+
+                {faqFormCategory === "Custom" && (
+                  <div>
+                    <label className="text-xs font-semibold text-foreground block mb-1">
+                      Custom Category Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={faqFormCustomCategory}
+                      onChange={(e) => setFaqFormCustomCategory(e.target.value)}
+                      placeholder="e.g. Corporate Gifts"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">
+                    Storefront Visibility
+                  </label>
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl border border-border bg-background cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={faqFormIsActive}
+                      onChange={(e) => setFaqFormIsActive(e.target.checked)}
+                      className="rounded border-border text-primary focus:ring-primary h-4 w-4"
+                    />
+                    <span className="text-xs font-medium text-foreground">
+                      {faqFormIsActive ? "Live on Storefront" : "Hidden / Draft"}
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Answer Textarea */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1">
+                  Answer Text <span className="text-destructive">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={4}
+                  value={faqFormAnswer}
+                  onChange={(e) => setFaqFormAnswer(e.target.value)}
+                  placeholder="Provide a clear, reassuring answer for customers. Explain timings, policies, or ingredients..."
+                  className="w-full rounded-xl border border-border bg-background p-3 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 leading-relaxed"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Line breaks and paragraphs will be preserved on the public storefront.
+                </p>
+              </div>
+
+              {/* Live Accordion Preview */}
+              <div className="rounded-2xl border border-border/80 bg-secondary/30 p-4 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Live Accordion Preview
+                </span>
+                <div className="p-3.5 rounded-xl bg-card border border-border space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold text-foreground">
+                      {faqFormQuestion.trim() || "Question preview will appear here..."}
+                    </span>
+                    <span className="text-primary font-bold text-sm">+</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground whitespace-pre-line border-t border-border/60 pt-2">
+                    {faqFormAnswer.trim() || "Answer preview will appear here once typed..."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="pt-3 border-t border-border/80 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFaqModalOpen(false);
+                    setEditingFaq(null);
+                  }}
+                  className="btn btn-ghost !py-2 !px-3 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingFaq}
+                  className="btn btn-primary !py-2 !px-4 text-xs font-semibold flex items-center gap-1.5 shadow-soft"
+                >
+                  {isSavingFaq ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {editingFaq ? "Save Changes" : "Publish FAQ"}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deletingFaq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl border border-destructive/30 bg-card p-6 shadow-soft space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold font-display text-foreground">Delete Question?</h3>
+                <p className="text-xs text-muted-foreground">
+                  This will remove the question from the live storefront immediately.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-destructive/5 border border-destructive/20 text-xs text-foreground space-y-1">
+              <span className="font-semibold block text-[10px] text-muted-foreground uppercase">Target Question</span>
+              <p className="font-medium italic">&ldquo;{deletingFaq.q}&rdquo;</p>
+            </div>
+
+            <div className="pt-3 border-t border-border/80 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingFaq(null)}
+                className="btn btn-ghost !py-2 !px-3 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteFaqConfirm}
+                className="btn bg-destructive text-destructive-foreground hover:bg-destructive/90 !py-2 !px-4 text-xs font-semibold shadow-soft"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OCCASION CREATE / EDIT MODAL */}
+      {isOccasionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-soft space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-border/80 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="h-8 w-8 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-sm"
+                  style={{ backgroundColor: occasionFormBadgeColor }}
+                >
+                  <BookmarkCheck className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold font-display text-foreground">
+                    {editingOccasion ? "Edit Cake Occasion" : "Add New Cake Occasion"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Define an occasion for customer cakes, orders, and filters.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOccasionModalOpen(false);
+                  setEditingOccasion(null);
+                }}
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOccasion} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Occasion Name <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={occasionFormName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setOccasionFormName(val);
+                    if (!editingOccasion) {
+                      setOccasionFormSlug(slugify(val));
+                    }
+                  }}
+                  placeholder="e.g. Anniversary, Graduation, Baby Shower"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  URL Slug & Filter Key
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs text-muted-foreground font-mono">/</span>
+                  <input
+                    type="text"
+                    value={occasionFormSlug}
+                    onChange={(e) => setOccasionFormSlug(slugify(e.target.value))}
+                    placeholder="e.g. anniversary"
+                    className="w-full rounded-xl border border-border bg-background pl-6 pr-3 py-2 text-sm font-mono text-foreground focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Used in URLs, search queries and event telemetry</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Short Description / Caption
+                </label>
+                <textarea
+                  rows={2}
+                  value={occasionFormDesc}
+                  onChange={(e) => setOccasionFormDesc(e.target.value)}
+                  placeholder="e.g. Elegant multi-tiered cakes designed for wedding vows and celebrations of love."
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              {/* Color Swatch Picker */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1.5">
+                  Badge Accent Color
+                </label>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  {[
+                    "#EC4899", // Rose
+                    "#8B5CF6", // Purple
+                    "#3B82F6", // Blue
+                    "#10B981", // Emerald
+                    "#F59E0B", // Amber
+                    "#06B6D4", // Cyan
+                    "#E11D48", // Crimson
+                    "#64748B", // Slate
+                  ].map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setOccasionFormBadgeColor(color)}
+                      className={`h-7 w-7 rounded-lg transition-transform ${
+                        occasionFormBadgeColor.toLowerCase() === color.toLowerCase()
+                          ? "ring-2 ring-primary ring-offset-2 scale-110"
+                          : "hover:scale-105"
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={occasionFormBadgeColor.startsWith("#") ? occasionFormBadgeColor : "#8B5CF6"}
+                    onChange={(e) => setOccasionFormBadgeColor(e.target.value)}
+                    className="h-8 w-12 rounded-lg border border-border bg-background cursor-pointer p-0.5"
+                  />
+                  <input
+                    type="text"
+                    value={occasionFormBadgeColor}
+                    onChange={(e) => setOccasionFormBadgeColor(e.target.value)}
+                    placeholder="#8B5CF6"
+                    className="flex-1 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:border-primary focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Storefront Active Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl border border-border/80 bg-accent/20">
+                <div>
+                  <p className="text-xs font-semibold text-foreground">Publish on Storefront</p>
+                  <p className="text-[11px] text-muted-foreground">Show in gallery filters and online order enquiry form</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={occasionFormIsActive}
+                  onChange={(e) => setOccasionFormIsActive(e.target.checked)}
+                  className="h-4 w-4 rounded text-primary focus:ring-primary cursor-pointer"
+                />
+              </div>
+
+              {/* Sync existing cakes notice if editing */}
+              {editingOccasion && getOccasionCakeCount(editingOccasion.name) > 0 && (
+                <div className="flex items-start gap-2 p-3 rounded-xl border border-primary/20 bg-primary/5 text-xs">
+                  <input
+                    type="checkbox"
+                    id="syncCakesOcc"
+                    checked={occasionFormSyncCakes}
+                    onChange={(e) => setOccasionFormSyncCakes(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 rounded text-primary focus:ring-primary cursor-pointer"
+                  />
+                  <label htmlFor="syncCakesOcc" className="text-foreground leading-snug cursor-pointer">
+                    Sync {getOccasionCakeCount(editingOccasion.name)} existing gallery {getOccasionCakeCount(editingOccasion.name) === 1 ? "cake" : "cakes"} tagged as &ldquo;{editingOccasion.name}&rdquo; to the new name.
+                  </label>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-border/80 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOccasionModalOpen(false);
+                    setEditingOccasion(null);
+                  }}
+                  className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingOccasion}
+                  className="btn btn-primary !py-2 !px-4 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  {isSavingOccasion && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {editingOccasion ? "Save Changes" : "Create Occasion"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* STYLE CREATE / EDIT MODAL */}
+      {isStyleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-soft space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-border/80 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="h-8 w-8 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-sm"
+                  style={{ backgroundColor: styleFormBadgeColor }}
+                >
+                  <Layers className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold font-display text-foreground">
+                    {editingStyle ? "Edit Cake Style" : "Add New Cake Style"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Define a decoration or finish style for cake designs.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsStyleModalOpen(false);
+                  setEditingStyle(null);
+                }}
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStyle} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Style Name <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={styleFormName}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStyleFormName(val);
+                    if (!editingStyle) {
+                      setStyleFormSlug(slugify(val));
+                    }
+                  }}
+                  placeholder="e.g. Palette Knife, Semi-Naked, Fondant"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  URL Slug & Filter Key
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs text-muted-foreground font-mono">/</span>
+                  <input
+                    type="text"
+                    value={styleFormSlug}
+                    onChange={(e) => setStyleFormSlug(slugify(e.target.value))}
+                    placeholder="e.g. palette-knife"
+                    className="w-full rounded-xl border border-border bg-background pl-6 pr-3 py-2 text-sm font-mono text-foreground focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Used for filtering and internal cake indexing</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Style Description & Technique Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={styleFormDesc}
+                  onChange={(e) => setStyleFormDesc(e.target.value)}
+                  placeholder="e.g. Textured Swiss meringue buttercream with organic palette knife waves and gold leaf."
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              {/* Color Swatch Picker */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1.5">
+                  Badge Accent Color
+                </label>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  {[
+                    "#EC4899", // Rose
+                    "#8B5CF6", // Purple
+                    "#3B82F6", // Blue
+                    "#10B981", // Emerald
+                    "#F59E0B", // Warm Amber
+                    "#06B6D4", // Cyan
+                    "#14B8A6", // Teal
+                    "#64748B", // Slate
+                  ].map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setStyleFormBadgeColor(color)}
+                      className={`h-7 w-7 rounded-lg transition-transform ${
+                        styleFormBadgeColor.toLowerCase() === color.toLowerCase()
+                          ? "ring-2 ring-primary ring-offset-2 scale-110"
+                          : "hover:scale-105"
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={styleFormBadgeColor.startsWith("#") ? styleFormBadgeColor : "#EC4899"}
+                    onChange={(e) => setStyleFormBadgeColor(e.target.value)}
+                    className="h-8 w-12 rounded-lg border border-border bg-background cursor-pointer p-0.5"
+                  />
+                  <input
+                    type="text"
+                    value={styleFormBadgeColor}
+                    onChange={(e) => setStyleFormBadgeColor(e.target.value)}
+                    placeholder="#EC4899"
+                    className="flex-1 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:border-primary focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Storefront Active Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl border border-border/80 bg-accent/20">
+                <div>
+                  <p className="text-xs font-semibold text-foreground">Publish on Storefront</p>
+                  <p className="text-[11px] text-muted-foreground">Enable in cake gallery filter chips and cake creation</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={styleFormIsActive}
+                  onChange={(e) => setStyleFormIsActive(e.target.checked)}
+                  className="h-4 w-4 rounded text-primary focus:ring-primary cursor-pointer"
+                />
+              </div>
+
+              {/* Sync existing cakes notice if editing */}
+              {editingStyle && getStyleCakeCount(editingStyle.name) > 0 && (
+                <div className="flex items-start gap-2 p-3 rounded-xl border border-primary/20 bg-primary/5 text-xs">
+                  <input
+                    type="checkbox"
+                    id="syncCakesSty"
+                    checked={styleFormSyncCakes}
+                    onChange={(e) => setStyleFormSyncCakes(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 rounded text-primary focus:ring-primary cursor-pointer"
+                  />
+                  <label htmlFor="syncCakesSty" className="text-foreground leading-snug cursor-pointer">
+                    Sync {getStyleCakeCount(editingStyle.name)} existing gallery {getStyleCakeCount(editingStyle.name) === 1 ? "cake" : "cakes"} styled as &ldquo;{editingStyle.name}&rdquo; to the new name.
+                  </label>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-border/80 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsStyleModalOpen(false);
+                    setEditingStyle(null);
+                  }}
+                  className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingStyle}
+                  className="btn btn-primary !py-2 !px-4 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  {isSavingStyle && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {editingStyle ? "Save Changes" : "Create Style"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TAXONOMY DELETE CONFIRMATION MODAL */}
+      {deletingTaxonomyItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl border border-destructive/30 bg-card p-6 shadow-soft space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold font-display text-foreground">
+                  Delete {deletingTaxonomyItem.type === "occasion" ? "Occasion" : "Cake Style"}?
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  This will remove the item from storefront filter options immediately.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-destructive/5 border border-destructive/20 text-xs text-foreground space-y-1">
+              <span className="font-semibold block text-[10px] text-muted-foreground uppercase">
+                {deletingTaxonomyItem.type === "occasion" ? "Occasion Name" : "Style Name"}
+              </span>
+              <p className="font-bold text-sm text-foreground">{deletingTaxonomyItem.item.name}</p>
+            </div>
+
+            {deletingTaxonomyItem.linkedCakeCount > 0 && (
+              <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
+                  Notice: {deletingTaxonomyItem.linkedCakeCount} {deletingTaxonomyItem.linkedCakeCount === 1 ? "cake" : "cakes"} in gallery use this tag
+                </p>
+                <p className="text-[11px] opacity-90">
+                  Deleting will remove this option from future dropdowns and filter chips. Existing cakes will retain their title and description.
+                </p>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-border/80 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingTaxonomyItem(null)}
+                className="btn btn-ghost !py-2 !px-3 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={
+                  deletingTaxonomyItem.type === "occasion"
+                    ? handleConfirmDeleteOccasion
+                    : handleConfirmDeleteStyle
+                }
+                className="btn bg-destructive text-destructive-foreground hover:bg-destructive/90 !py-2 !px-4 text-xs font-semibold shadow-soft"
+              >
+                Confirm Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -216,6 +216,62 @@ DROP POLICY IF EXISTS "Public read site_theme" ON public.site_theme;
 CREATE POLICY "Public read site_theme" ON public.site_theme FOR SELECT TO anon, authenticated USING (true);
 DROP POLICY IF EXISTS "Privileged write site_theme" ON public.site_theme;
 CREATE POLICY "Privileged write site_theme" ON public.site_theme FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- 14. Frequently Asked Questions Table (CMS Privileged Management)
+CREATE TABLE IF NOT EXISTS public.faqs (
+  id text PRIMARY KEY,
+  question text NOT NULL,
+  answer text NOT NULL,
+  category text NOT NULL DEFAULT 'General',
+  display_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT ALL ON public.faqs TO anon, authenticated, service_role;
+ALTER TABLE public.faqs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read faqs" ON public.faqs;
+CREATE POLICY "Public read faqs" ON public.faqs FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "Privileged write faqs" ON public.faqs;
+CREATE POLICY "Privileged write faqs" ON public.faqs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- 15. Cake Occasions Table (CMS Taxonomy Management)
+CREATE TABLE IF NOT EXISTS public.occasions (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  slug text NOT NULL UNIQUE,
+  description text,
+  badge_color text,
+  display_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT ALL ON public.occasions TO anon, authenticated, service_role;
+ALTER TABLE public.occasions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read occasions" ON public.occasions;
+CREATE POLICY "Public read occasions" ON public.occasions FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "Privileged write occasions" ON public.occasions;
+CREATE POLICY "Privileged write occasions" ON public.occasions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- 16. Cake Styles Table (CMS Taxonomy Management)
+CREATE TABLE IF NOT EXISTS public.styles (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  slug text NOT NULL UNIQUE,
+  description text,
+  badge_color text,
+  display_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT ALL ON public.styles TO anon, authenticated, service_role;
+ALTER TABLE public.styles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read styles" ON public.styles;
+CREATE POLICY "Public read styles" ON public.styles FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "Privileged write styles" ON public.styles;
+CREATE POLICY "Privileged write styles" ON public.styles FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
 
 export const COMPLETE_DATABASE_SCHEMA_SQL = COMPLETE_SUPABASE_SQL;

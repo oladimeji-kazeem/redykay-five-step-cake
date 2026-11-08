@@ -14,8 +14,8 @@ export const CONTACT = {
 
 export const images = { hero, sculpted, vegan, corporate, buttercream, tasting };
 
-export type Occasion = "Wedding" | "Birthday" | "Corporate" | "Celebration";
-export type Style = "Sculpted" | "Buttercream" | "Fondant" | "Dietary-Friendly";
+export type Occasion = "Wedding" | "Birthday" | "Corporate" | "Celebration" | (string & {});
+export type Style = "Sculpted" | "Buttercream" | "Fondant" | "Dietary-Friendly" | (string & {});
 
 export const gallery: {
   src: string; title: string; occasion: Occasion; style: Style; brief: string; solution: string;
