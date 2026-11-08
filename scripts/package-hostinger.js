@@ -30,7 +30,7 @@ if (fs.existsSync(zipPath)) {
 console.log("Packaging .output/public for Hostinger deployment...");
 
 if (process.platform === "win32") {
-  execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${publicDir}\\*' -DestinationPath '${zipPath}' -Force"`, { stdio: "inherit" });
+  execSync(`powershell -NoProfile -Command "$ProgressPreference = 'SilentlyContinue'; Compress-Archive -Path '${publicDir}\\*' -DestinationPath '${zipPath}' -Force"`, { stdio: "inherit" });
 } else {
   execSync(`cd "${publicDir}" && zip -r "${zipPath}" .`, { stdio: "inherit" });
 }

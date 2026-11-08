@@ -564,3 +564,39 @@ export function createChatMailtoLink(conversation: ChatConversation, initialText
     REDYCAKES_CONTACT_EMAIL
   )}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
+
+/**
+ * Normalizes phone numbers for WhatsApp wa.me links
+ * Handles:
+ * - Stripping non-numeric characters (except leading +)
+ * - UK local numbers starting with 07... -> 447...
+ * - Numbers starting with 00... -> replaced with bare country code
+ * - Stripping leading 0 if standard international prefix missing (defaults to 44 if 10/11 digits UK style)
+ */
+export function formatWhatsAppNumber(phone?: string | null, defaultCountryCode = "44"): string {
+  if (!phone) return "";
+  let cleaned = phone.replace(/[^0-9+]/g, "").trim();
+  if (cleaned.startsWith("+")) {
+    cleaned = cleaned.substring(1);
+  } else if (cleaned.startsWith("00")) {
+    cleaned = cleaned.substring(2);
+  } else if (cleaned.startsWith("0") && cleaned.length >= 10 && cleaned.length <= 11) {
+    // UK local mobile/landline e.g. 07123456789 -> 447123456789
+    cleaned = defaultCountryCode + cleaned.substring(1);
+  } else if (cleaned.startsWith("0")) {
+    cleaned = defaultCountryCode + cleaned.replace(/^0+/, "");
+  }
+  return cleaned.replace(/[^0-9]/g, "");
+}
+
+/**
+ * Creates a WhatsApp click-to-chat URL with optional pre-filled message
+ */
+export function createWhatsAppLink(phone?: string | null, text?: string): string {
+  const cleanNumber = formatWhatsAppNumber(phone);
+  if (!cleanNumber) return "";
+  const base = `https://wa.me/${cleanNumber}`;
+  if (!text) return base;
+  return `${base}?text=${encodeURIComponent(text)}`;
+}
+

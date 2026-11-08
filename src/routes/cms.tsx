@@ -128,6 +128,8 @@ import {
   deleteChatConversation,
   markConversationRead,
   createChatMailtoLink,
+  createWhatsAppLink,
+  formatWhatsAppNumber,
   REDYCAKES_CONTACT_EMAIL,
   type ChatConversation,
   type ChatMessage,
@@ -4535,12 +4537,30 @@ function CmsPage() {
                           </select>
                         </td>
                         <td className="p-3.5 text-right whitespace-nowrap">
-                          <button
-                            onClick={() => setSelectedOrder(o)}
-                            className="p-1.5 rounded-lg border border-border/80 hover:bg-accent text-foreground transition text-xs font-medium"
-                          >
-                            View & Price
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {o.phone && (
+                              <a
+                                href={createWhatsAppLink(
+                                  o.phone,
+                                  `Hi ${o.name}, Redycakes cake studio following up regarding your order enquiry for ${
+                                    (o as any).cake_name || o.occasion || "your celebration"
+                                  } on ${o.event_date || (o as any).date || "your requested date"}!`
+                                )}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition"
+                                title="Chat with customer on WhatsApp"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            <button
+                              onClick={() => setSelectedOrder(o)}
+                              className="p-1.5 rounded-lg border border-border/80 hover:bg-accent text-foreground transition text-xs font-medium"
+                            >
+                              View & Price
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -4622,9 +4642,10 @@ function CmsPage() {
                           <div className="flex items-center justify-end gap-2">
                             {(m as any).phone && (
                               <a
-                                href={`https://wa.me/${(m as any).phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
-                                  `Hi ${m.name}, thank you for contacting Redycakes!`
-                                )}`}
+                                href={createWhatsAppLink(
+                                  (m as any).phone,
+                                  `Hi ${m.name}, thank you for contacting Redycakes regarding your message!`
+                                )}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="p-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
@@ -4843,10 +4864,27 @@ function CmsPage() {
 
                         {/* Phone & message count footer */}
                         <div className="flex items-center justify-between text-[11px] text-muted-foreground/80 pt-1 border-t border-border/40">
-                          <span className="flex items-center gap-1">
-                            <Phone className="h-3 w-3" />
-                            {conv.visitorPhone || "No phone"}
-                          </span>
+                          {conv.visitorPhone ? (
+                            <a
+                              href={createWhatsAppLink(
+                                conv.visitorPhone,
+                                `Hi ${conv.visitorName}, thank you for contacting Redycakes!`
+                              )}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+                              title="Chat on WhatsApp"
+                            >
+                              <MessageSquare className="h-3 w-3" />
+                              <span>{conv.visitorPhone}</span>
+                            </a>
+                          ) : (
+                            <span className="flex items-center gap-1 text-muted-foreground">
+                              <Phone className="h-3 w-3" />
+                              No phone
+                            </span>
+                          )}
                           <span>{conv.messages?.length || 0} msgs</span>
                         </div>
                       </div>
@@ -4897,12 +4935,16 @@ function CmsPage() {
                             </a>
                             {activeChat.visitorPhone && (
                               <a
-                                href={`https://wa.me/${activeChat.visitorPhone.replace(/[^0-9]/g, "")}`}
+                                href={createWhatsAppLink(
+                                  activeChat.visitorPhone,
+                                  `Hi ${activeChat.visitorName}, thank you for contacting Redycakes!`
+                                )}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="hover:text-emerald-600 flex items-center gap-1 shrink-0"
+                                className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-semibold shrink-0"
+                                title="Open chat on WhatsApp"
                               >
-                                <Phone className="h-3 w-3" /> {activeChat.visitorPhone}
+                                <MessageSquare className="h-3 w-3" /> WhatsApp: {activeChat.visitorPhone}
                               </a>
                             )}
                           </div>
@@ -4911,6 +4953,20 @@ function CmsPage() {
 
                       {/* Header Actions */}
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {activeChat.visitorPhone && (
+                          <a
+                            href={createWhatsAppLink(
+                              activeChat.visitorPhone,
+                              `Hi ${activeChat.visitorName}, thank you for reaching out to Redycakes!`
+                            )}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition"
+                            title="Open WhatsApp chat with visitor"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                          </a>
+                        )}
                         <button
                           type="button"
                           onClick={() =>
@@ -5047,6 +5103,26 @@ function CmsPage() {
                           placeholder={`Write a reply to ${activeChat.visitorName}... (Enter to send)`}
                           className="flex-1 rounded-xl border border-border bg-background p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
                         />
+                        {activeChat.visitorPhone ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const text =
+                                adminReplyText.trim() ||
+                                `Hi ${activeChat.visitorName}, thank you for reaching out to Redycakes!`;
+                              const waUrl = createWhatsAppLink(activeChat.visitorPhone, text);
+                              window.open(waUrl, "_blank", "noopener,noreferrer");
+                              if (adminReplyText.trim()) {
+                                await handleSendAdminReply();
+                              }
+                            }}
+                            className="btn !bg-emerald-600 hover:!bg-emerald-700 !text-white !py-2.5 !px-3.5 text-xs font-semibold flex items-center gap-1.5 shrink-0 shadow-sm transition"
+                            title={`Open WhatsApp with reply and record in chat transcript`}
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            Reply on WhatsApp
+                          </button>
+                        ) : null}
                         <button
                           type="submit"
                           disabled={!adminReplyText.trim() || isSendingChatReply}
@@ -6976,19 +7052,47 @@ function CmsPage() {
 
             {/* Quick Actions in Modal */}
             <div className="pt-3 border-t border-border/80 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {selectedOrder.phone && (
-                  <a
-                    href={`https://wa.me/${selectedOrder.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
-                      `Hi ${selectedOrder.name}, Redycakes cake studio following up on your quote for the ${(selectedOrder as any).cake_name || selectedOrder.occasion} cake!`
-                    )}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 font-semibold text-xs hover:bg-emerald-500/20"
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    WhatsApp
-                  </a>
+                  <>
+                    <a
+                      href={createWhatsAppLink(
+                        selectedOrder.phone,
+                        `Hi ${selectedOrder.name}, Redycakes cake studio following up on your quote for the ${
+                          (selectedOrder as any).cake_name || selectedOrder.occasion || "bespoke"
+                        } cake!`
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 font-semibold text-xs hover:bg-emerald-500/20 transition"
+                      title="Open WhatsApp chat with customer"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      WhatsApp Chat
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const payUrl = `${window.location.origin}/pay?order=${selectedOrder.id}`;
+                        const quoteMsg =
+                          `Hi ${selectedOrder.name},\n\nThank you for choosing Redycakes! Here is your bespoke cake quote for your celebration on ${selectedOrder.event_date}:\n\n` +
+                          `🎂 Cake: ${(selectedOrder as any).cake_name || selectedOrder.occasion || "Bespoke Cake"}\n` +
+                          `💰 Total Quote: ${formatMoney(selectedOrder.quote_amount || selectedOrder.budget, draftPaymentSettings.currency)}\n` +
+                          `🔒 Deposit to Secure Date: ${formatMoney(selectedOrder.deposit_amount || (selectedOrder.quote_amount ? selectedOrder.quote_amount * 0.5 : 50), draftPaymentSettings.currency)}\n\n` +
+                          `Pay online securely with Card or UK Faster Payments here:\n${payUrl}\n\n` +
+                          `Or Direct Bank Transfer:\nBank: ${draftPaymentSettings.bankTransfer.bankName}\nSort Code: ${draftPaymentSettings.bankTransfer.sortCode}\nAccount: ${draftPaymentSettings.bankTransfer.accountNumber}\nReference: ${draftPaymentSettings.bankTransfer.referencePrefix}${selectedOrder.id.slice(0, 8).toUpperCase()}`;
+
+                        const link = createWhatsAppLink(selectedOrder.phone, quoteMsg);
+                        window.open(link, "_blank", "noopener,noreferrer");
+                        toast.success("Opening WhatsApp with complete quote & payment details!");
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 shadow-sm transition"
+                      title="Send complete quote and payment link directly via WhatsApp"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      Send Quote on WhatsApp
+                    </button>
+                  </>
                 )}
                 <a
                   href={`mailto:${selectedOrder.email}?subject=${encodeURIComponent(
