@@ -37,10 +37,10 @@ function Contact() {
         message: parsed.data.message,
       });
 
-      // Dispatch via Hostinger SMTP (smtp.hostinger.com:465) copying sender
+      // Dispatch via Hostinger SMTP (smtp.hostinger.com:465) copying sender and admin backup
       sendEmailViaHostingerSmtp({
         to: "hello@redycakes.org",
-        cc: parsed.data.email,
+        cc: ["redycakesinfo@gmail.com", parsed.data.email].filter(Boolean).join(", "),
         subject: `[Contact Form] New Inquiry from ${parsed.data.name}`,
         message: parsed.data.message,
         visitorName: parsed.data.name,

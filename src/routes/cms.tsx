@@ -138,6 +138,8 @@ import {
   getHostingerSmtpSettings,
   saveHostingerSmtpSettings,
   testHostingerSmtpConnection,
+  sendOrderStatusEmailNotification,
+  getOrderStatusDetails,
   type HostingerSmtpConfig,
 } from "@/lib/emailService";
 import {
@@ -4524,7 +4526,39 @@ function CmsPage() {
                               setOrders((prev) =>
                                 prev.map((item) => (item.id === o.id ? { ...item, status: newSt } : item))
                               );
-                              toast.success(`Order #${o.id.slice(0, 8)} updated to ${newSt}`);
+
+                              // Dispatch email to customer (CC hello@redycakes.org & redycakesinfo@gmail.com)
+                              sendOrderStatusEmailNotification({
+                                orderId: o.id,
+                                customerName: o.name,
+                                customerEmail: o.email,
+                                customerPhone: o.phone,
+                                occasion: (o as any).cake_name || o.occasion || "Bespoke Cake",
+                                eventDate: o.event_date || (o as any).date,
+                                status: newSt,
+                              }).catch((err) => console.debug("[Order Status] Dispatch note:", err));
+
+                              const statusInfo = getOrderStatusDetails(newSt);
+                              const waMessage = `Hi ${o.name}! 🎂 Update on your ${
+                                (o as any).cake_name || o.occasion || "cake"
+                              } order (#${o.id.slice(0, 8).toUpperCase()}): Status is now *${newSt}* (${statusInfo.title}). ${statusInfo.description}`;
+
+                              if (o.phone) {
+                                toast.success(`Order #${o.id.slice(0, 8)} updated to ${newSt}`, {
+                                  description: `Email sent to ${o.email} (CC hello@redycakes.org & redycakesinfo@gmail.com)`,
+                                  action: {
+                                    label: "Send on WhatsApp",
+                                    onClick: () => {
+                                      const url = createWhatsAppLink(o.phone, waMessage);
+                                      window.open(url, "_blank", "noopener,noreferrer");
+                                    },
+                                  },
+                                });
+                              } else {
+                                toast.success(`Order #${o.id.slice(0, 8)} updated to ${newSt}`, {
+                                  description: `Email sent to ${o.email} (CC hello@redycakes.org & redycakesinfo@gmail.com)`,
+                                });
+                              }
                             }}
                             className="rounded-lg border border-border bg-background px-2 py-1 text-xs font-semibold focus:border-primary outline-none"
                           >
@@ -7091,6 +7125,25 @@ function CmsPage() {
                     >
                       <Send className="h-3.5 w-3.5" />
                       Send Quote on WhatsApp
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const statusInfo = getOrderStatusDetails(selectedOrder.status);
+                        const statusMsg = `Hi ${selectedOrder.name}! 🎂 Update from Redycakes on your ${
+                          (selectedOrder as any).cake_name || selectedOrder.occasion || "cake"
+                        } order (#${selectedOrder.id.slice(0, 8).toUpperCase()}): Status is currently *${selectedOrder.status}* (${statusInfo.title}).\n\n${statusInfo.description}\n\nEvent Date: ${selectedOrder.event_date || (selectedOrder as any).date || "TBD"}\nNext Step: ${statusInfo.nextStep}`;
+
+                        const link = createWhatsAppLink(selectedOrder.phone, statusMsg);
+                        window.open(link, "_blank", "noopener,noreferrer");
+                        toast.success(`Opening WhatsApp with status update (${selectedOrder.status})!`);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/10 text-primary font-semibold text-xs hover:bg-primary/20 transition"
+                      title="Send current order status update directly via WhatsApp"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Send Status on WhatsApp
                     </button>
                   </>
                 )}

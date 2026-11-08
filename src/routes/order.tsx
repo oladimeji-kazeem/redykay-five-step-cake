@@ -9,6 +9,7 @@ import { saveOrder, type OrderItem } from "@/lib/databaseSchema";
 import { usePaymentSettings, formatMoney } from "@/lib/paymentSettings";
 import { trackEvent } from "@/lib/analytics";
 import { supabase } from "@/integrations/supabase/client";
+import { sendEmailViaHostingerSmtp } from "@/lib/emailService";
 
 export const Route = createFileRoute("/order")({
   validateSearch: (s: Record<string, unknown>): { occasion?: string } =>
@@ -111,6 +112,38 @@ function Order() {
       });
 
       setSubmittedOrder(created);
+
+      // Dispatch order confirmation email: TO hello@redycakes.org, CC redycakesinfo@gmail.com & customer
+      const orderRef = created?.id ? created.id.slice(0, 8).toUpperCase() : "NEW";
+      const orderSummaryText = [
+        `Thank you for choosing Redycakes! We have received your cake order request.`,
+        ``,
+        `Order Reference: #${orderRef}`,
+        `Customer: ${d.name}`,
+        `Email: ${d.email}`,
+        `Phone: ${d.phone || "Not provided"}`,
+        `Occasion: ${d.occasion}`,
+        `Event Date: ${d.event_date || "Not set"}`,
+        `Guests / Portions: ${d.guests || "Custom"}`,
+        `Flavours: ${d.flavours && d.flavours.length > 0 ? d.flavours.join(", ") : "Vanilla bean"}`,
+        `Dietary: ${d.dietary && d.dietary.length > 0 ? d.dietary.join(", ") : "None"}`,
+        `Budget Guide: ${d.budget}`,
+        `Fulfillment: ${d.fulfilment}`,
+        d.notes ? `Customer Notes: ${d.notes}` : "",
+        ``,
+        `Our pastry team is reviewing your design and will get back to you with custom pricing and availability shortly.`,
+      ].filter(Boolean).join("\n");
+
+      sendEmailViaHostingerSmtp({
+        to: "hello@redycakes.org",
+        cc: ["redycakesinfo@gmail.com", d.email.trim()].filter(Boolean).join(", "),
+        replyTo: d.email.trim(),
+        subject: `[Cake Order #${orderRef}] ${d.occasion} Cake for ${d.name}`,
+        message: orderSummaryText,
+        visitorName: d.name,
+        visitorEmail: d.email,
+        visitorPhone: d.phone,
+      }).catch((e) => console.debug("[Order Email] SMTP dispatch note:", e));
 
       trackEvent("order_submitted", {
         occasion: d.occasion,

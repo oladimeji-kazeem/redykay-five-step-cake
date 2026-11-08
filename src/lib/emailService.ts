@@ -261,3 +261,100 @@ export async function testHostingerSmtpConnection(
     };
   }
 }
+
+/**
+ * Returns human-friendly title, description, and next steps for order statuses
+ */
+export function getOrderStatusDetails(status: string): { title: string; description: string; nextStep: string } {
+  switch (status) {
+    case "Quoted":
+      return {
+        title: "Quote Ready for Review",
+        description: "We have reviewed your bespoke cake requirements and calculated your quote.",
+        nextStep: "Please review the quote details and secure your event date with a deposit.",
+      };
+    case "Confirmed":
+      return {
+        title: "Order Confirmed & Date Secured",
+        description: "Your cake celebration has been confirmed and reserved in our studio baking diary.",
+        nextStep: "Our team will source premium ingredients and prepare your bespoke design templates.",
+      };
+    case "Baking":
+      return {
+        title: "Baking & Decoration in Progress",
+        description: "Your bespoke cake has entered our kitchen! Our pastry chefs are actively baking, layering, and hand-crafting your design.",
+        nextStep: "Your cake will be rested, chilled, and packed in luxury protective presentation packaging.",
+      };
+    case "Completed":
+      return {
+        title: "Cake Completed & Ready",
+        description: "Your bespoke cake is completely finished, inspected, and ready!",
+        nextStep: "If collection was selected, it is ready for pickup at our studio. If delivery was requested, our courier is on schedule.",
+      };
+    case "Archived":
+      return {
+        title: "Order Completed & Archived",
+        description: "Thank you for choosing Redycakes Cake Studio for your special event!",
+        nextStep: "We hope your celebration was magical. We would love to hear your feedback!",
+      };
+    default:
+      return {
+        title: "Order Received",
+        description: "Your cake inquiry is in our system and under review.",
+        nextStep: "We will contact you shortly with availability and pricing.",
+      };
+  }
+}
+
+/**
+ * Dispatches status change notification: TO customer, CC hello@redycakes.org & redycakesinfo@gmail.com
+ */
+export async function sendOrderStatusEmailNotification(params: {
+  orderId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string | null;
+  occasion: string;
+  eventDate?: string | null;
+  status: string;
+}): Promise<boolean> {
+  const { title, description, nextStep } = getOrderStatusDetails(params.status);
+  const orderRef = params.orderId.slice(0, 8).toUpperCase();
+  const subject = `[Order #${orderRef}] Status: ${params.status} (${title}) — Redycakes Cake Studio`;
+
+  const messageText = [
+    `Hi ${params.customerName},`,
+    "",
+    `Here is an update on your ${params.occasion} cake order (#${orderRef}):`,
+    "",
+    `Status: ${params.status.toUpperCase()} — ${title}`,
+    description,
+    "",
+    `Event Date: ${params.eventDate || "TBD"}`,
+    `Next Step: ${nextStep}`,
+    "",
+    "If you have any questions or wish to make adjustments, you can reply directly to this email or message us on WhatsApp.",
+    "",
+    "Warm regards,",
+    "Redycakes Studio Team",
+    "hello@redycakes.org",
+  ].join("\n");
+
+  try {
+    await sendEmailViaHostingerSmtp({
+      to: params.customerEmail,
+      cc: "hello@redycakes.org, redycakesinfo@gmail.com",
+      replyTo: "hello@redycakes.org",
+      subject,
+      message: messageText,
+      visitorName: params.customerName,
+      visitorEmail: params.customerEmail,
+      visitorPhone: params.customerPhone || undefined,
+    });
+    return true;
+  } catch (err) {
+    console.debug("[Order Status Email] Dispatch note:", err);
+    return false;
+  }
+}
+
