@@ -73,6 +73,34 @@ if (!empty($data['html'])) {
     $safe_message = nl2br(htmlspecialchars($message_text, ENT_QUOTES, 'UTF-8'));
     $date_formatted = date('d M Y, H:i (T)');
 
+    // 1-Click WhatsApp Direct Reply CTA button for Admin email
+    $whatsapp_cta_html = '';
+    if (!empty($visitor_phone)) {
+        $clean_phone = preg_replace('/[^0-9+]/', '', trim($visitor_phone));
+        if (substr($clean_phone, 0, 1) === '+') {
+            $clean_phone = substr($clean_phone, 1);
+        } else if (substr($clean_phone, 0, 2) === '00') {
+            $clean_phone = substr($clean_phone, 2);
+        } else if (substr($clean_phone, 0, 1) === '0' && strlen($clean_phone) >= 10 && strlen($clean_phone) <= 11) {
+            $clean_phone = '44' . substr($clean_phone, 1);
+        } else if (substr($clean_phone, 0, 1) === '0') {
+            $clean_phone = '44' . ltrim($clean_phone, '0');
+        }
+        $clean_phone = preg_replace('/[^0-9]/', '', $clean_phone);
+
+        if (!empty($clean_phone)) {
+            $wa_prefill = rawurlencode("Hi {$visitor_name}, thank you for contacting Redycakes!");
+            $wa_url = "https://wa.me/{$clean_phone}?text={$wa_prefill}";
+            $whatsapp_cta_html = <<<WA
+            <div style="margin: 22px 0 12px; text-align: center;">
+              <a href="{$wa_url}" target="_blank" style="display: inline-block; background-color: #25D366; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 9999px; font-weight: 700; font-size: 14px; box-shadow: 0 4px 10px rgba(37, 211, 102, 0.35); letter-spacing: -0.2px;">
+                💬 Reply to {$safe_visitor} on WhatsApp
+              </a>
+            </div>
+WA;
+        }
+    }
+
     $body_html = <<<HTML
 <!DOCTYPE html>
 <html>
@@ -113,8 +141,9 @@ if (!empty($data['html'])) {
       <div class="message-box">
         {$safe_message}
       </div>
+      {$whatsapp_cta_html}
       <p style="font-size: 12px; color: #78716c; margin-top: 24px;">
-        This transcript has been sent to <strong>hello@redycakes.org</strong> and copied to <strong>{$safe_email}</strong>.
+        This transcript has been sent to <strong>hello@redycakes.org</strong>, CCed to <strong>redycakesinfo@gmail.com</strong>, and copied to <strong>{$safe_email}</strong>.
       </p>
     </div>
     <div class="footer">

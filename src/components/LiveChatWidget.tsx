@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   MessageCircle,
+  MessageSquare,
   X,
   Send,
   Loader2,
@@ -14,6 +15,7 @@ import {
   RotateCw,
   ExternalLink,
 } from "lucide-react";
+import { useSiteContent } from "@/lib/siteContent";
 import {
   ChatConversation,
   ChatMessage,
@@ -28,6 +30,7 @@ import {
   setActiveChatId,
   REDYCAKES_CONTACT_EMAIL,
   createChatMailtoLink,
+  createWhatsAppLink,
 } from "@/lib/chatService";
 
 // Gentle audio chime using Web Audio API when admin replies
@@ -57,6 +60,9 @@ function playChatNotificationChime() {
 }
 
 export function LiveChatWidget() {
+  const { content } = useSiteContent();
+  const studioWhatsApp = content?.contact?.whatsapp || "447000000000";
+
   const [isOpen, setIsOpen] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
   const [activeConversation, setActiveConversation] = useState<ChatConversation | null>(null);
@@ -504,6 +510,23 @@ export function LiveChatWidget() {
                     </>
                   )}
                 </button>
+
+                <div className="relative my-2.5 text-center text-[10px] text-muted-foreground uppercase tracking-wider before:content-[''] before:absolute before:top-1/2 before:left-0 before:w-full before:h-px before:bg-border/60">
+                  <span className="relative bg-card px-2">or prefer WhatsApp?</span>
+                </div>
+
+                <a
+                  href={createWhatsAppLink(
+                    studioWhatsApp,
+                    "Hi Redycakes! I'm visiting your website and would love to enquire about a bespoke cake."
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 py-2 px-3 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Chat with us on WhatsApp
+                </a>
               </form>
             </div>
           ) : (
