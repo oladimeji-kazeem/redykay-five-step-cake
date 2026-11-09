@@ -50,6 +50,40 @@ export function Header() {
   );
 }
 
+export function InstagramIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+    </svg>
+  );
+}
+
+export function TikTokIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64c.29 0 .58.04.85.12V9.4a6.33 6.33 0 0 0-.85-.06A6.34 6.34 0 0 0 3.14 15.7a6.34 6.34 0 0 0 10.8 4.49 6.27 6.27 0 0 0 1.88-4.49V8.58a8.28 8.28 0 0 0 4.84 1.56V6.69h-.07z" />
+    </svg>
+  );
+}
+
+export function FacebookIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+    </svg>
+  );
+}
+
+export function PinterestIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0a12 12 0 0 0-4.37 23.17c-.07-.98-.13-2.49.03-3.56.14-.97.94-6.44.94-6.44s-.24-.48-.24-1.2c0-1.12.65-1.96 1.46-1.96.69 0 1.02.52 1.02 1.14 0 .7-.44 1.74-.67 2.7-.19.82.41 1.48 1.21 1.48 1.45 0 2.57-1.53 2.57-3.74 0-1.96-1.4-3.32-3.42-3.32-2.33 0-3.7 1.75-3.7 3.56 0 .7.27 1.46.61 1.87.07.08.08.15.06.23-.06.26-.2.83-.23.94-.04.15-.12.18-.28.11-1.04-.49-1.69-2.01-1.69-3.24 0-2.63 1.91-5.05 5.51-5.05 2.89 0 5.14 2.06 5.14 4.82 0 2.88-1.81 5.19-4.33 5.19-.85 0-1.64-.44-1.91-.96l-.52 1.98c-.19.73-.7 1.64-1.04 2.19A12 12 0 1 0 12 0z" />
+    </svg>
+  );
+}
+
 export function Footer() {
   const { content } = useSiteContent();
   const contact = content.contact;
@@ -64,6 +98,60 @@ export function Footer() {
           <p className="mt-3 max-w-xs text-sm text-muted-foreground leading-relaxed">
             Bespoke cakes, ordered the easy way. Clear answers, honest timelines, flavours people rave about.
           </p>
+          {/* Social Media Links */}
+          <div className="mt-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">Follow our bakes</p>
+            <div className="flex items-center gap-2">
+              {contact.instagram && (
+                <a
+                  href={contact.instagram}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Instagram"
+                  className="p-2 rounded-xl bg-accent/40 border border-border/80 hover:bg-primary/10 hover:border-primary/40 hover:text-primary text-foreground transition-all"
+                  title="Follow us on Instagram"
+                >
+                  <InstagramIcon className="h-4 w-4" />
+                </a>
+              )}
+              {contact.tiktok && (
+                <a
+                  href={contact.tiktok}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="TikTok"
+                  className="p-2 rounded-xl bg-accent/40 border border-border/80 hover:bg-primary/10 hover:border-primary/40 hover:text-primary text-foreground transition-all"
+                  title="Follow us on TikTok"
+                >
+                  <TikTokIcon className="h-4 w-4" />
+                </a>
+              )}
+              {contact.facebook && (
+                <a
+                  href={contact.facebook}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Facebook"
+                  className="p-2 rounded-xl bg-accent/40 border border-border/80 hover:bg-primary/10 hover:border-primary/40 hover:text-primary text-foreground transition-all"
+                  title="Follow us on Facebook"
+                >
+                  <FacebookIcon className="h-4 w-4" />
+                </a>
+              )}
+              {contact.pinterest && (
+                <a
+                  href={contact.pinterest}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Pinterest"
+                  className="p-2 rounded-xl bg-accent/40 border border-border/80 hover:bg-primary/10 hover:border-primary/40 hover:text-primary text-foreground transition-all"
+                  title="Inspiration on Pinterest"
+                >
+                  <PinterestIcon className="h-4 w-4" />
+                </a>
+              )}
+            </div>
+          </div>
         </div>
         <div className="text-sm space-y-2 text-muted-foreground">
           <p className="font-semibold text-foreground">Get in touch</p>

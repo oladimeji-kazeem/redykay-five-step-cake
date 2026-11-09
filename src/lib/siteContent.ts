@@ -68,6 +68,10 @@ export interface SiteContent {
     whatsapp: string;
     serviceArea: string;
     replyPromise: string;
+    instagram?: string;
+    tiktok?: string;
+    facebook?: string;
+    pinterest?: string;
   };
   hero: {
     eyebrow: string;
@@ -121,6 +125,10 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     whatsapp: defaultContact.whatsapp,
     serviceArea: defaultContact.serviceArea,
     replyPromise: defaultContact.replyPromise,
+    instagram: "https://instagram.com/redycakes",
+    tiktok: "https://tiktok.com/@redycakes",
+    facebook: "https://facebook.com/redycakes",
+    pinterest: "https://pinterest.com/redycakes",
   },
   hero: {
     eyebrow: "Bespoke cake studio · UK",

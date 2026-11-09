@@ -3008,6 +3008,76 @@ function CmsPage() {
                   </div>
                 </div>
 
+                {/* SOCIAL MEDIA PROFILES */}
+                <div className="pt-4 border-t border-border/80">
+                  <h3 className="text-sm font-semibold mb-1">Social Media Profiles</h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    These links will appear on the website footer, contact page, and order confirmations.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Instagram URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://instagram.com/redycakes"
+                        value={draftContent.contact.instagram ?? ""}
+                        onChange={(e) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            contact: { ...prev.contact, instagram: e.target.value },
+                          }))
+                        }
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">TikTok URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://tiktok.com/@redycakes"
+                        value={draftContent.contact.tiktok ?? ""}
+                        onChange={(e) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            contact: { ...prev.contact, tiktok: e.target.value },
+                          }))
+                        }
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Facebook Page URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://facebook.com/redycakes"
+                        value={draftContent.contact.facebook ?? ""}
+                        onChange={(e) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            contact: { ...prev.contact, facebook: e.target.value },
+                          }))
+                        }
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Pinterest URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://pinterest.com/redycakes"
+                        value={draftContent.contact.pinterest ?? ""}
+                        onChange={(e) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            contact: { ...prev.contact, pinterest: e.target.value },
+                          }))
+                        }
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm mt-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="pt-4 border-t border-border/80">
                   <h3 className="text-sm font-semibold mb-3">Global Call-to-Action Banner</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
