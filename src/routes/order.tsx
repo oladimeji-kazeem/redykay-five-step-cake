@@ -3,7 +3,7 @@ import { useState, useMemo } from "react";
 import { z } from "zod";
 import { CreditCard, Building2, CheckCircle2, Copy, Check, ArrowRight, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { seo } from "@/components/SiteLayout";
+import { seo, InstagramIcon, TikTokIcon } from "@/components/SiteLayout";
 import { useSiteContent } from "@/lib/siteContent";
 import { saveOrder, type OrderItem } from "@/lib/databaseSchema";
 import { usePaymentSettings, formatMoney } from "@/lib/paymentSettings";
@@ -271,6 +271,50 @@ function Order() {
             )}
           </div>
         )}
+
+        {/* Follow us on Instagram Banner */}
+        <div className="mt-8 rounded-3xl border border-pink-500/25 bg-gradient-to-br from-pink-500/10 via-card to-purple-500/10 p-6 sm:p-7 text-left shadow-soft flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+          <div className="space-y-1.5 max-w-md">
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm inline-flex">
+                <InstagramIcon className="h-4 w-4" />
+              </span>
+              <span className="text-xs uppercase font-extrabold tracking-wider text-rose-500">
+                Behind the Scenes in the Studio
+              </span>
+            </div>
+            <h3 className="font-display text-lg font-bold text-foreground">
+              Watch your cake being made on Instagram
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              We regularly share decorating time-lapses, buttercream piping tutorials, and celebration setups. Follow along to see recent bakes and watch out for your creation!
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <a
+              href={contact.instagram || "https://instagram.com/redycakes"}
+              target="_blank"
+              rel="noreferrer"
+              className="btn !bg-gradient-to-r !from-rose-500 !to-purple-600 !text-white hover:opacity-95 text-xs font-bold py-2.5 px-4 flex items-center justify-center gap-2 shadow-soft transition"
+            >
+              <InstagramIcon className="h-4 w-4" />
+              <span>Follow @redycakes</span>
+            </a>
+            {contact.tiktok && (
+              <a
+                href={contact.tiktok}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-outline text-xs font-semibold py-2.5 px-3 flex items-center justify-center gap-1.5 hover:bg-accent transition"
+                title="Follow us on TikTok"
+              >
+                <TikTokIcon className="h-3.5 w-3.5" />
+                <span>TikTok</span>
+              </a>
+            )}
+          </div>
+        </div>
 
         <div className="mt-8">
           <Link to="/" className="text-xs text-muted-foreground hover:text-primary transition underline-offset-4 hover:underline">
