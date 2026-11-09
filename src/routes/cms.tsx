@@ -28,6 +28,10 @@ import {
   Tablet,
   TrendingUp,
   Sparkles,
+  Download,
+  Clock,
+  ArrowUpRight,
+  Compass,
   CreditCard,
   Building2,
   Lock,
@@ -97,6 +101,7 @@ import {
 } from "@/lib/cmsAuth";
 import {
   getAnalyticsData,
+  exportAnalyticsCsv,
   type AnalyticsSummary,
 } from "@/lib/analytics";
 import { supabase } from "@/integrations/supabase/client";
@@ -2140,30 +2145,101 @@ function CmsPage() {
               <div>
                 <h1 className="text-2xl sm:text-3xl font-display font-bold">Web Analytics</h1>
                 <p className="text-sm text-muted-foreground">
-                  Visitor traffic trends, popular pages, conversion metrics, and device breakdowns.
+                  Visitor traffic trends, acquisition channels, conversion funnels, and engagement metrics.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => setAnalyticsDays(7)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                    analyticsDays === 7
-                      ? "bg-primary text-primary-foreground"
-                      : "border border-border text-foreground hover:bg-accent"
-                  }`}
+                  type="button"
+                  onClick={() => analytics && exportAnalyticsCsv(analytics)}
+                  disabled={!analytics}
+                  className="rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent transition flex items-center gap-1.5 disabled:opacity-50"
+                  title="Export raw analytics data to CSV"
                 >
-                  Last 7 Days
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export CSV</span>
                 </button>
-                <button
-                  onClick={() => setAnalyticsDays(30)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                    analyticsDays === 30
-                      ? "bg-primary text-primary-foreground"
-                      : "border border-border text-foreground hover:bg-accent"
-                  }`}
-                >
-                  Last 30 Days
-                </button>
+                <div className="flex items-center gap-1 border-l border-border pl-2">
+                  <button
+                    onClick={() => setAnalyticsDays(7)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                      analyticsDays === 7
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    Last 7 Days
+                  </button>
+                  <button
+                    onClick={() => setAnalyticsDays(30)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                      analyticsDays === 30
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    Last 30 Days
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* KPI Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="font-semibold uppercase tracking-wider">Total Views</span>
+                  <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                    <TrendingUp className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-3 text-2xl sm:text-3xl font-bold text-foreground">
+                  {analytics?.totalViews.toLocaleString() ?? 0}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {analytics?.uniqueVisitors.toLocaleString() ?? 0} unique sessions
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="font-semibold uppercase tracking-wider">Order Conversion</span>
+                  <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-3 text-2xl sm:text-3xl font-bold text-emerald-600">
+                  {analytics?.conversionRate ?? 0}%
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {analytics?.ordersSubmitted ?? 0} orders placed
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="font-semibold uppercase tracking-wider">Bounce Rate</span>
+                  <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600">
+                    <Compass className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-3 text-2xl sm:text-3xl font-bold text-foreground">
+                  {analytics?.bounceRate ?? "0.0"}%
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">Single-page visits</p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-soft">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="font-semibold uppercase tracking-wider">Avg. Time on Site</span>
+                  <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-3 text-2xl sm:text-3xl font-bold text-foreground">
+                  {analytics?.avgDurationFormatted ?? "1m 15s"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">Active session duration</p>
               </div>
             </div>
 
@@ -2239,12 +2315,79 @@ function CmsPage() {
               </div>
             </div>
 
+            {/* Acquisition Channels & E-Commerce Funnel */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Acquisition Channels */}
+              <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-soft">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-base font-semibold">Acquisition Channels & Referrers</h2>
+                  <span className="text-xs text-muted-foreground">Where visitors discover you</span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">Traffic categorized by social platform and search engine</p>
+
+                <div className="space-y-3.5">
+                  {analytics?.topReferrers.map((ref) => (
+                    <div key={ref.source}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-semibold text-foreground">{ref.source}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-muted-foreground text-[11px]">{ref.count} visits</span>
+                          <span className="font-bold text-foreground">{ref.percent}%</span>
+                        </div>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-primary to-purple-500 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(100, Math.max(4, ref.percent))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {(!analytics || analytics.topReferrers.length === 0) && (
+                    <p className="text-xs text-muted-foreground text-center py-6">No referrer data logged yet.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Conversion Funnel */}
+              <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-soft">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-base font-semibold">Storefront Conversion Funnel</h2>
+                  <span className="text-xs text-emerald-600 font-bold">{analytics?.conversionRate ?? 0}% overall</span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">Customer progression from visit to confirmed order</p>
+
+                <div className="space-y-3">
+                  {analytics?.funnelSteps?.map((step, idx) => (
+                    <div key={step.step} className="rounded-xl border border-border/60 bg-background/50 p-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-[10px]">
+                            {idx + 1}
+                          </span>
+                          <span className="font-semibold text-foreground">{step.step}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-foreground">{step.count.toLocaleString()}</span>
+                          {step.dropOffRate && (
+                            <span className="text-[11px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              {step.dropOffRate}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Popular Pages and Device Split */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Popular Pages */}
               <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-soft">
                 <h2 className="text-base font-semibold mb-1">Top Performing Pages</h2>
-                <p className="text-xs text-muted-foreground mb-4">Most visited routes on redycakes.co.uk</p>
+                <p className="text-xs text-muted-foreground mb-4">Most visited routes on redycakes.org</p>
 
                 <div className="space-y-3">
                   {analytics?.topPages.map((page, idx) => (
@@ -2265,7 +2408,7 @@ function CmsPage() {
                 </div>
               </div>
 
-              {/* Device Split & Conversion Funnel */}
+              {/* Device Split */}
               <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-soft flex flex-col justify-between">
                 <div>
                   <h2 className="text-base font-semibold mb-1">Device Breakdown</h2>
@@ -2344,7 +2487,7 @@ function CmsPage() {
                       <th className="pb-2 font-semibold">Route / Page</th>
                       <th className="pb-2 font-semibold">Event</th>
                       <th className="pb-2 font-semibold">Device</th>
-                      <th className="pb-2 font-semibold">Referrer</th>
+                      <th className="pb-2 font-semibold">Referrer / Channel</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
@@ -2361,7 +2504,7 @@ function CmsPage() {
                         </td>
                         <td className="py-2.5 capitalize">{ev.device}</td>
                         <td className="py-2.5 text-muted-foreground truncate max-w-[200px]">
-                          {ev.referrer || "Direct Visit"}
+                          {ev.referrer || "Direct"}
                         </td>
                       </tr>
                     ))}

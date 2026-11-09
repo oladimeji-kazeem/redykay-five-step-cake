@@ -32,6 +32,7 @@ import {
   createChatMailtoLink,
   createWhatsAppLink,
 } from "@/lib/chatService";
+import { trackEvent } from "@/lib/analytics";
 
 // Gentle audio chime using Web Audio API when admin replies
 function playChatNotificationChime() {
@@ -209,6 +210,7 @@ export function LiveChatWidget() {
       setVisitorProfile(profile);
 
       const conv = await startChatConversation(profile, message);
+      trackEvent("chat_started", { name, email });
       setActiveConversation(conv);
       setFormInitialMessage("");
       setIsEditingProfile(false);
@@ -238,6 +240,7 @@ export function LiveChatWidget() {
       });
 
       if (newMsg) {
+        trackEvent("chat_message_sent");
         setActiveConversation((prev) =>
           prev
             ? {
@@ -298,7 +301,12 @@ export function LiveChatWidget() {
       <div className="fixed bottom-6 right-6 z-50">
         <button
           type="button"
-          onClick={() => setIsOpen((prev) => !prev)}
+          onClick={() => {
+            setIsOpen((prev) => {
+              if (!prev) trackEvent("chat_opened");
+              return !prev;
+            });
+          }}
           aria-label={isOpen ? "Close live chat" : "Open live chat with Redycakes Studio"}
           className={`relative group flex items-center gap-2.5 rounded-full px-5 py-3.5 font-semibold text-sm shadow-2xl transition-all duration-300 transform active:scale-95 ${
             isOpen
@@ -522,6 +530,7 @@ export function LiveChatWidget() {
                   )}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={() => trackEvent("whatsapp_clicked", { source: "chat_widget" })}
                   className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 py-2 px-3 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
                 >
                   <MessageSquare className="h-3.5 w-3.5" />

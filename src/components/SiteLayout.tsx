@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useSiteContent } from "@/lib/siteContent";
+import { trackEvent } from "@/lib/analytics";
 
 const nav = [
   { to: "/cakes", label: "Cakes" },
@@ -156,7 +157,7 @@ export function Footer() {
         <div className="text-sm space-y-2 text-muted-foreground">
           <p className="font-semibold text-foreground">Get in touch</p>
           <p><a href={`mailto:${contact.email}`} className="hover:text-primary transition-colors underline-offset-4 hover:underline">{contact.email}</a></p>
-          <p><a href={`https://wa.me/${contact.whatsapp}`} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors underline-offset-4 hover:underline">WhatsApp quick chat</a></p>
+          <p><a href={`https://wa.me/${contact.whatsapp}`} target="_blank" rel="noreferrer" onClick={() => trackEvent("whatsapp_clicked", { source: "footer" })} className="hover:text-primary transition-colors underline-offset-4 hover:underline">WhatsApp quick chat</a></p>
           <p className="text-muted-foreground/80">{contact.serviceArea}</p>
         </div>
         <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">

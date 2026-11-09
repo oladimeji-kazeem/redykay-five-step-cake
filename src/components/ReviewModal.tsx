@@ -7,6 +7,7 @@ import {
   type ExperienceOccasion,
 } from "@/lib/feedbackService";
 import { useOccasionsAndStyles } from "@/lib/occasionStyleService";
+import { trackEvent } from "@/lib/analytics";
 
 interface ReviewModalProps {
   isOpen: boolean;
@@ -90,6 +91,8 @@ export function ReviewModal({
         review_text: reviewText,
         recommend,
       });
+
+      trackEvent("review_submitted", { rating, occasion });
 
       setIsSubmitted(true);
       setSubmittedReview(review);
