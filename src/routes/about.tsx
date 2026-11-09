@@ -3,7 +3,13 @@ import { CtaBand, PageHero, seo } from "@/components/SiteLayout";
 import { useSiteContent } from "@/lib/siteContent";
 
 export const Route = createFileRoute("/about")({
-  head: () => seo("Our Story — Redycakes", "A small bespoke cake studio built on one idea: ordering a cake should feel as good as eating it."),
+  head: () =>
+    seo(
+      "Our Story & Bakery Philosophy — Redycakes",
+      "A small bespoke cake studio built on one idea: ordering a celebration cake should feel as good as eating it.",
+      "/og-image.jpg",
+      "/about"
+    ),
   component: About,
 });
 

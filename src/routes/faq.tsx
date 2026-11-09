@@ -5,7 +5,13 @@ import { CtaBand, PageHero, seo } from "@/components/SiteLayout";
 import { useSiteContent } from "@/lib/siteContent";
 
 export const Route = createFileRoute("/faq")({
-  head: () => seo("FAQ — Redycakes", "Lead times, deposits, changes, delivery and allergens — answered warmly and upfront."),
+  head: () =>
+    seo(
+      "Frequently Asked Questions — Redycakes",
+      "Lead times, deposits, changes, delivery, pricing and allergens — answered warmly, clearly and upfront.",
+      "/og-image.jpg",
+      "/faq"
+    ),
   component: Faq,
 });
 

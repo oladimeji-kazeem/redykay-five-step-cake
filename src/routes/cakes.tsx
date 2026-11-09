@@ -5,7 +5,13 @@ import { useSiteContent } from "@/lib/siteContent";
 import { ReviewsShowcase } from "@/components/ReviewsShowcase";
 
 export const Route = createFileRoute("/cakes")({
-  head: () => seo("Cake Gallery — Redycakes", "Browse wedding, birthday, corporate and celebration cakes — each with the brief and how we solved it."),
+  head: () =>
+    seo(
+      "Cake Gallery & Bespoke Portfolio — Redycakes",
+      "Browse our handcrafted wedding, birthday, corporate and celebration cakes — each with the brief, signature flavours and custom solving.",
+      "/og-image.jpg",
+      "/cakes"
+    ),
   component: Cakes,
 });
 

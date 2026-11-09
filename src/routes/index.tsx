@@ -5,10 +5,13 @@ import { useSiteContent } from "@/lib/siteContent";
 import { ReviewsShowcase } from "@/components/ReviewsShowcase";
 
 export const Route = createFileRoute("/")({
-  head: () => seo(
-    "Redycakes — Bespoke Cakes, Ordered the Easy Way",
-    "Beautiful bespoke cakes with clear answers, honest timelines and flavours people rave about. Weddings, birthdays, corporate and dietary-friendly.",
-  ),
+  head: () =>
+    seo(
+      "Redycakes — Bespoke Cakes, Ordered the Easy Way",
+      "Beautiful bespoke cakes with clear answers, honest timelines and flavours people rave about. Weddings, birthdays, corporate and dietary-friendly.",
+      "/og-image.jpg",
+      "/"
+    ),
   component: Home,
 });
 

@@ -213,39 +213,59 @@ export function CtaBand({ title, text }: { title?: string; text?: string }) {
   );
 }
 
-const SITE_URL = "https://www.redycakes.org";
-const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.jpg`;
+export const SITE_URL = "https://www.redycakes.org";
+export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.jpg`;
 
-export function seo(title: string, description: string, image = DEFAULT_OG_IMAGE, path = "/") {
+export interface SeoOptions {
+  type?: "website" | "article" | "product";
+  noIndex?: boolean;
+}
+
+export function seo(
+  title: string,
+  description: string,
+  image = DEFAULT_OG_IMAGE,
+  path = "/",
+  options: SeoOptions = {}
+) {
   const fullUrl = path.startsWith("http") ? path : `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
   const fullImageUrl = image.startsWith("http") ? image : `${SITE_URL}${image.startsWith("/") ? image : `/${image}`}`;
+  const pageType = options.type || "website";
+
+  const metaList: Array<Record<string, string>> = [
+    { title },
+    { name: "description", content: description },
+
+    // Open Graph / WhatsApp / Facebook / LinkedIn / iMessage
+    { property: "og:site_name", content: "Redycakes" },
+    { property: "og:type", content: pageType },
+    { property: "og:url", content: fullUrl },
+    { property: "og:title", content: title },
+    { property: "og:description", content: description },
+    { property: "og:locale", content: "en_GB" },
+    { property: "og:image", content: fullImageUrl },
+    { property: "og:image:secure_url", content: fullImageUrl },
+    { property: "og:image:type", content: fullImageUrl.endsWith(".png") ? "image/png" : "image/jpeg" },
+    { property: "og:image:width", content: "1200" },
+    { property: "og:image:height", content: "675" },
+    { property: "og:image:alt", content: title },
+
+    // Twitter / X
+    { name: "twitter:card", content: "summary_large_image" },
+    { name: "twitter:site", content: "@redycakes" },
+    { name: "twitter:creator", content: "@redycakes" },
+    { name: "twitter:title", content: title },
+    { name: "twitter:description", content: description },
+    { name: "twitter:image", content: fullImageUrl },
+    { name: "twitter:image:alt", content: title },
+  ];
+
+  if (options.noIndex) {
+    metaList.push({ name: "robots", content: "noindex, nofollow" });
+  }
 
   return {
-    meta: [
-      { title },
-      { name: "description", content: description },
-
-      // Open Graph / WhatsApp / Facebook / LinkedIn / iMessage
-      { property: "og:site_name", content: "Redycakes" },
-      { property: "og:type", content: "website" },
-      { property: "og:url", content: fullUrl },
-      { property: "og:title", content: title },
-      { property: "og:description", content: description },
-      { property: "og:locale", content: "en_GB" },
-      { property: "og:image", content: fullImageUrl },
-      { property: "og:image:secure_url", content: fullImageUrl },
-      { property: "og:image:type", content: fullImageUrl.endsWith(".png") ? "image/png" : "image/jpeg" },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "675" },
-      { property: "og:image:alt", content: "Redycakes luxury bespoke celebration and wedding cakes studio" },
-
-      // Twitter / X
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: title },
-      { name: "twitter:description", content: description },
-      { name: "twitter:image", content: fullImageUrl },
-      { name: "twitter:image:alt", content: title },
-    ],
+    meta: metaList,
     links: [
       { rel: "canonical", href: fullUrl },
       { rel: "image_src", href: fullImageUrl },

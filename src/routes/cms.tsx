@@ -172,7 +172,14 @@ import {
 } from "@/lib/occasionStyleService";
 
 export const Route = createFileRoute("/cms")({
-  head: () => seo("CMS Admin Studio — Redycakes", "Manage site content, orders, inquiries, web analytics and team access."),
+  head: () =>
+    seo(
+      "CMS Admin Studio — Redycakes",
+      "Manage site content, orders, inquiries, web analytics and team access.",
+      "/og-image.jpg",
+      "/cms",
+      { noIndex: true }
+    ),
   component: CmsPage,
 });
 

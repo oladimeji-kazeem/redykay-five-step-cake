@@ -6,7 +6,13 @@ import { useSiteContent } from "@/lib/siteContent";
 import { usePaymentSettings, formatMoney } from "@/lib/paymentSettings";
 
 export const Route = createFileRoute("/tasting-boxes")({
-  head: () => seo("Wedding Tasting Boxes — Redycakes", "Try six of our signature flavours at home before choosing your wedding cake. A relaxed, low-pressure first step."),
+  head: () =>
+    seo(
+      "Wedding Tasting Boxes — Redycakes",
+      "Try six of our signature artisan flavours at home before choosing your wedding cake. A relaxed, low-pressure first step.",
+      "/og-image.jpg",
+      "/tasting-boxes"
+    ),
   component: Tasting,
 });
 

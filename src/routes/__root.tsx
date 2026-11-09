@@ -104,6 +104,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
         // Twitter / X
         { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:site", content: "@redycakes" },
+        { name: "twitter:creator", content: "@redycakes" },
         { name: "twitter:title", content: title },
         { name: "twitter:description", content: description },
         { name: "twitter:image", content: ogImageUrl },
@@ -129,10 +131,40 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "Bakery",
+    "@id": "https://www.redycakes.org/#bakery",
+    name: "Redycakes",
+    alternateName: "Redy Cakes Studio",
+    url: "https://www.redycakes.org",
+    logo: "https://www.redycakes.org/redycakes_logo.png",
+    image: "https://www.redycakes.org/og-image.jpg",
+    description: "Artisanal celebration, wedding and dietary-friendly cakes handcrafted in the UK. Order online with our 5-step custom cake builder, tasting boxes & instant quotes.",
+    telephone: "+447000000000",
+    email: "hello@redycakes.org",
+    priceRange: "£££",
+    address: {
+      "@type": "PostalAddress",
+      addressLocality: "London & Home Counties",
+      addressCountry: "GB",
+    },
+    sameAs: [
+      "https://www.instagram.com/redycakes",
+      "https://www.tiktok.com/@redycakes",
+      "https://www.facebook.com/redycakes",
+      "https://www.pinterest.com/redycakes",
+    ],
+  };
+
   return (
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </head>
       <body>
         {children}

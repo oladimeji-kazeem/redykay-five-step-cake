@@ -14,7 +14,13 @@ import { sendEmailViaHostingerSmtp } from "@/lib/emailService";
 export const Route = createFileRoute("/order")({
   validateSearch: (s: Record<string, unknown>): { occasion?: string } =>
     typeof s["occasion"] === "string" ? { occasion: s["occasion"] } : {},
-  head: () => seo("Start Your Order — Redycakes", "Tell us about your cake in a few simple steps. We reply within 24 hours, Monday to Saturday."),
+  head: () =>
+    seo(
+      "Design & Order Your Bespoke Cake — Redycakes",
+      "Tell us about your celebration in a few simple steps. Select occasions, styles, tiers, flavours and dietary preferences with instant guidance.",
+      "/og-image.jpg",
+      "/order"
+    ),
   component: Order,
 });
 

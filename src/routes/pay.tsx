@@ -50,7 +50,9 @@ export const Route = createFileRoute("/pay")({
   head: () =>
     seo(
       "Secure Online Payment & Bank Transfer — Redycakes",
-      "Pay your bespoke cake deposit, tasting box, or order balance securely online or via direct UK Faster Payments."
+      "Pay your bespoke cake deposit, tasting box, or order balance securely online or via direct UK Faster Payments.",
+      "/og-image.jpg",
+      "/pay"
     ),
   component: PaymentPage,
 });

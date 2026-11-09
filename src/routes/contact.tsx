@@ -8,7 +8,13 @@ import { trackEvent } from "@/lib/analytics";
 import { sendEmailViaHostingerSmtp } from "@/lib/emailService";
 
 export const Route = createFileRoute("/contact")({
-  head: () => seo("Contact — Redycakes", "Message us, chat on WhatsApp or email. We reply within 24 hours, Monday to Saturday."),
+  head: () =>
+    seo(
+      "Contact & Bespoke Studio Enquiries — Redycakes",
+      "Message us, chat on WhatsApp or send an email enquiry. We reply within 24 hours, Monday to Saturday.",
+      "/og-image.jpg",
+      "/contact"
+    ),
   component: Contact,
 });
 

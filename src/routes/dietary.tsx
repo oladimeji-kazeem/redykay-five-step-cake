@@ -4,7 +4,13 @@ import { images } from "@/lib/site";
 import { useSiteContent } from "@/lib/siteContent";
 
 export const Route = createFileRoute("/dietary")({
-  head: () => seo("Dietary-Friendly Cakes — Redycakes", "Vegan, gluten-free, dairy-free and egg-free bespoke cakes made with care — never an afterthought."),
+  head: () =>
+    seo(
+      "Dietary-Friendly & Free-From Cakes — Redycakes",
+      "Vegan, gluten-free, dairy-free and egg-free bespoke cakes made with care — delicious texture and flavour, never an afterthought.",
+      "/og-image.jpg",
+      "/dietary"
+    ),
   component: Dietary,
 });
 
