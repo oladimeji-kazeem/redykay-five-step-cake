@@ -1,3 +1,12 @@
+<IfModule mod_mime.c>
+  AddType text/css .css
+  AddType application/javascript .js .mjs
+  AddType image/svg+xml .svg
+  AddType image/x-icon .ico
+  AddType font/woff2 .woff2
+  AddType font/woff .woff
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
@@ -6,16 +15,23 @@
   RewriteCond %{HTTPS} off
   RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-  # 2. Serve static directory index if it exists (prerendered routes)
+  # 2. Never rewrite /api/ requests
+  RewriteRule ^api/ - [L]
+
+  # 3. Serve existing static file directly
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^ - [L]
+
+  # 4. Serve prerendered directory index if exists
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteCond %{REQUEST_FILENAME}/index.html -f
   RewriteRule ^ - [L]
 
-  # 3. Serve existing static file (assets, images, favicon)
-  RewriteCond %{REQUEST_FILENAME} -f
-  RewriteRule ^ - [L]
+  # 5. Prevent rewriting missing static assets to index.html
+  RewriteCond %{REQUEST_URI} \.(css|js|mjs|jpg|jpeg|png|gif|svg|ico|webp|woff|woff2|ttf|eot|map|json)$ [NC]
+  RewriteRule ^ - [L,R=404]
 
-  # 4. Client-side SPA routing fallback to index.html
+  # 6. SPA fallback for HTML page routes
   RewriteRule ^ index.html [L]
 </IfModule>
 
